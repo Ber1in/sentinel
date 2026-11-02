@@ -45,6 +45,10 @@ const api = {
   updateHost: (host: HostSpec, name: string, groupName: string | null): Promise<void> =>
     ipcRenderer.invoke('host:update', host, name, groupName),
   deleteHost: (hostId: string): Promise<void> => ipcRenderer.invoke('host:delete', hostId),
+  saveLayout: (tabs: unknown[], panes: unknown[]): Promise<void> =>
+    ipcRenderer.invoke('layout:save', tabs, panes),
+  loadLayout: (): Promise<{ tabs: unknown[]; panes: unknown[] }> =>
+    ipcRenderer.invoke('layout:load'),
   duplicateHost: (hostId: string, newId: string): Promise<void> =>
     ipcRenderer.invoke('host:duplicate', hostId, newId),
   sendInput: (sessionId: string, payload: Uint8Array): Promise<boolean> =>

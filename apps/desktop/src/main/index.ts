@@ -197,6 +197,18 @@ function registerIpc(): void {
       .catch((error: Error) => ({ ok: false, error: error.message }))
   })
 
+  ipcMain.handle('layout:save', async (_event, tabs: unknown[], panes: unknown[]) => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'save_layout', tabs, panes } as never)
+    if (result.result === 'error') throw new Error(result.error.message)
+  })
+
+  ipcMain.handle('layout:load', async () => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'load_layout' })
+    return result.result === 'layout' ? { tabs: result.tabs, panes: result.panes } : { tabs: [], panes: [] }
+  })
+
   ipcMain.handle('hosts:list', async () => {
     const daemon = await getClient()
     const result = await daemon.request({ op: 'list_hosts' })
