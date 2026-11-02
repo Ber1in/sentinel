@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { ChevronsRight, Columns2, Command, Eye, EyeOff, Moon, Pencil, Plus, Rows2, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
 import type { HostSummary } from '../shared/HostSummary'
 import type { SessionState } from '../shared/SessionState'
+import type { SessionSummary } from '../shared/SessionSummary'
 import type { ProviderKind } from '../shared/ProviderKind'
 import type { Terminal } from '@xterm/xterm'
 import { TerminalPane } from './TerminalPane'
@@ -47,6 +48,7 @@ export function App() {
     () => (localStorage.getItem('sentinel.theme') as Theme | null) ?? 'dark'
   )
   const [hosts, setHosts] = useState<HostSummary[]>([])
+  const [daemonSessions, setDaemonSessions] = useState<SessionSummary[]>([])
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTab, setActiveTab] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -209,7 +211,12 @@ export function App() {
 
   const refreshHosts = useCallback(async () => {
     try {
-      setHosts(await window.desktop.listHosts())
+      const [nextHosts, nextSessions] = await Promise.all([
+        window.desktop.listHosts(),
+        window.desktop.listSessions()
+      ])
+      setHosts(nextHosts)
+      setDaemonSessions(nextSessions)
     } catch {
       // Daemon may not be running yet; the status card covers that.
     }
@@ -269,6 +276,63 @@ export function App() {
       cancelled = true
     }
   }, [])
+
+  const background = useMemo(() => {
+    const open = new Set(tabs.flatMap((tab) => tab.panes.map((pane) => pane.sessionId)))
+    return daemonSessions.filter((session) => !open.has(session.session_id))
+  }, [daemonSessions, tabs])
+
+  const openBackground = useCallback(
+    (session: SessionSummary) => {
+      addTab({
+        id: session.session_id,
+        direction: 'horizontal',
+        panes: [
+          {
+            id: 'main',
+            ratio: 1,
+            hostId: session.host_id,
+            sessionId: session.session_id,
+            numeric: session.numeric,
+            title: session.title,
+            state: session.state,
+            provider: session.provider
+          }
+        ]
+      })
+    },
+    [addTab]
+  )
+
+  const reconnectAll = useCallback(() => {
+    for (const tab of tabs) {
+      for (const pane of tab.panes) {
+        if (pane.numeric !== 0 || !pane.hostId) continue
+        const host = hosts.find((item) => item.id === pane.hostId)
+        if (!host) continue
+        void window.desktop
+          .createSession(
+            {
+              host_id: host.id,
+              hostname: host.hostname,
+              port: host.port,
+              username: host.username,
+              auth: host.auth
+            },
+            pane.id,
+            null
+          )
+          .then((reply) =>
+            patchPaneIn(tab.id, pane.id, {
+              sessionId: reply.session_id,
+              numeric: reply.numeric,
+              state: 'connecting'
+            })
+          )
+          .catch(() => undefined)
+      }
+    }
+  }, [hosts, patchPaneIn, tabs])
 
   const register = useCallback((numeric: number, terminal: Terminal | null) => {
     if (terminal) terminals.current.set(numeric, terminal)
@@ -446,7 +510,10 @@ export function App() {
                   className="group mb-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-elevated"
                 >
                   <button onClick={() => void openSession(host)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-elevated text-muted group-hover:text-accent">
+                    <span
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-elevated text-muted group-hover:text-accent"
+                      style={{ boxShadow: `inset 2px 0 0 ${hostColor(host.id)}` }}
+                    >
                       <Server size={14} />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -468,6 +535,34 @@ export function App() {
               ))
             )}
           </div>
+          {background.length > 0 ? (
+            <>
+              <div className="flex items-center justify-between border-t border-line px-3 pb-1 pt-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  {t('sessions.title')}
+                </span>
+                <button
+                  className="rounded px-1.5 py-0.5 text-[10px] text-accent transition hover:bg-elevated"
+                  onClick={reconnectAll}
+                >
+                  {t('action.reconnectAll')}
+                </button>
+              </div>
+              <div className="max-h-[180px] overflow-y-auto px-2 pb-2">
+                {background.map((session) => (
+                  <button
+                    key={session.session_id}
+                    onClick={() => openBackground(session)}
+                    className="mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-elevated"
+                  >
+                    <span className="status-dot" style={{ background: stateColor(session.state) }} />
+                    <span className="min-w-0 flex-1 truncate text-[12px]">{session.title}</span>
+                    <span className="text-[10px] text-muted">{session.provider}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
           <div className="border-t border-line px-3 py-2 text-[11px] text-muted">
             {daemonOnline ? (
               <div className="flex items-center gap-1.5">
@@ -510,6 +605,10 @@ export function App() {
                 style={activeTab === tab.id ? { boxShadow: 'inset 0 -2px 0 var(--accent)' } : undefined}
               >
                 <span className="status-dot" style={{ background: stateColor(paneState(tab)) }} />
+                <span
+                  className="h-2 w-2 rounded-sm"
+                  style={{ background: hostColor(tab.panes[0]?.hostId ?? '') }}
+                />
                 <span className="max-w-[220px] truncate">{paneTitle(tab)}</span>
                 <button
                   className="grid h-4 w-4 place-items-center rounded text-muted opacity-0 transition hover:bg-elevated hover:text-ink group-hover:opacity-100"
@@ -623,6 +722,22 @@ export function App() {
           setPaletteOpen(false)
           setDialogOpen(true)
         }}
+        actions={[
+          {
+            label: t('action.reconnectAll'),
+            run: () => {
+              setPaletteOpen(false)
+              reconnectAll()
+            }
+          },
+          {
+            label: t('settings.title'),
+            run: () => {
+              setPaletteOpen(false)
+              setSettingsOpen(true)
+            }
+          }
+        ]}
       />
 
       <HostDialog
@@ -659,6 +774,13 @@ export function App() {
       </div>
     </div>
   )
+}
+
+/** Stable per-host accent so tabs and host cards share a colour. */
+function hostColor(id: string): string {
+  let hash = 0
+  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) % 360
+  return `hsl(${hash} 65% 58%)`
 }
 
 function stateColor(state: SessionState): string {
@@ -876,8 +998,9 @@ function CommandPalette(props: {
   t: (key: string) => string
   onPick: (host: HostSummary) => void
   onNew: () => void
+  actions: Array<{ label: string; run: () => void }>
 }) {
-  const { open, onOpenChange, hosts, t, onPick, onNew } = props
+  const { open, onOpenChange, hosts, t, onPick, onNew, actions } = props
   const [query, setQuery] = useState('')
   const filtered = hosts.filter((host) => `${host.name} ${host.hostname}`.toLowerCase().includes(query.toLowerCase()))
 
@@ -913,6 +1036,16 @@ function CommandPalette(props: {
               <Plus size={14} className="text-muted" />
               {t('action.new')}
             </button>
+            {actions.map((action) => (
+              <button
+                key={action.label}
+                onClick={action.run}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[13px] transition hover:bg-elevated"
+              >
+                <Command size={14} className="text-muted" />
+                {action.label}
+              </button>
+            ))}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

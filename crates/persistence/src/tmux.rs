@@ -41,8 +41,10 @@ impl Default for TmuxOptions {
 impl TmuxOptions {
     /// Contents of the injected config file.
     pub fn config_contents(&self) -> String {
+        // The PROMPT_COMMAND line makes every bash pane report its working directory
+        // (OSC 7) so the GUI can follow `cd` without installing anything.
         format!(
-            "set -g status {}\nset -g mouse {}\nset -g history-limit {}\nset -g default-terminal \"{}\"\nset -g destroy-unattached off\nset -g focus-events on\n",
+            "set -g status {}\nset -g mouse {}\nset -g history-limit {}\nset -g default-terminal \"{}\"\nset -g destroy-unattached off\nset -g focus-events on\nset-environment -g PROMPT_COMMAND \"printf '\\\\033]7;file://%s%s\\\\033\\\\\\\\' \\\"${{HOSTNAME}}\\\" \\\"$PWD\\\"\"\n",
             if self.status { "on" } else { "off" },
             if self.mouse { "on" } else { "off" },
             self.history_limit,
@@ -296,6 +298,8 @@ mod tests {
         assert!(config.contains("mouse off"));
         assert!(config.contains("history-limit 100000"));
         assert!(config.contains("destroy-unattached off"));
+        assert!(config.contains("PROMPT_COMMAND"));
+        assert!(config.contains("]7;file://"));
     }
 
     #[test]
@@ -305,6 +309,69 @@ mod tests {
         assert!(command.contains("-c /var/log"));
         assert!(command.contains("-L sentinel"));
         assert!(command.contains("-f"));
+    }
+
+    #[test]
+    fn injected_config_is_accepted_by_tmux() {
+        if std::process::Command::new("tmux")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            return; // tmux not installed on this machine
+        }
+        let dir = std::env::temp_dir().join(format!("sentinel-tmux-cfg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tmux.conf");
+        std::fs::write(&path, TmuxOptions::default().config_contents()).unwrap();
+        let socket = format!("cfgtest{}", std::process::id());
+        let output = std::process::Command::new("tmux")
+            .args([
+                "-L",
+                &socket,
+                "-f",
+                path.to_str().unwrap(),
+                "new-session",
+                "-d",
+                "-s",
+                "probe",
+            ])
+            .output()
+            .expect("run tmux");
+        assert!(
+            output.status.success(),
+            "tmux rejected the injected config: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // The injected PROMPT_COMMAND must reach panes created by this server, otherwise
+        // shell integration never reports a working directory.
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let _ = std::process::Command::new("tmux")
+            .args([
+                "-L",
+                &socket,
+                "send-keys",
+                "-t",
+                "probe",
+                "echo \"[$PROMPT_COMMAND]\"",
+                "Enter",
+            ])
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let captured = std::process::Command::new("tmux")
+            .args(["-L", &socket, "capture-pane", "-p", "-t", "probe:"])
+            .output()
+            .expect("capture");
+        let text = String::from_utf8_lossy(&captured.stdout);
+        assert!(
+            text.contains("]7;file://"),
+            "PROMPT_COMMAND was not inherited by the pane: {text:?}"
+        );
+
+        let _ = std::process::Command::new("tmux")
+            .args(["-L", &socket, "kill-server"])
+            .status();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
