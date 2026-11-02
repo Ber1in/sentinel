@@ -66,6 +66,8 @@ pub struct SessionEvents {
     pub recreated: watch::Receiver<bool>,
     pub output: broadcast::Sender<OutputChunk>,
     pub state_detail: watch::Receiver<Option<String>>,
+    /// Working directory reported by shell integration, when the remote shell emits it.
+    pub cwd: watch::Receiver<Option<String>>,
 }
 
 pub struct SessionRuntime {
@@ -83,6 +85,7 @@ impl SessionRuntime {
         let (state_tx, state_rx) = watch::channel(SessionState::Connecting);
         let (recreated_tx, recreated_rx) = watch::channel(false);
         let (detail_tx, detail_rx) = watch::channel(None);
+        let (cwd_tx, cwd_rx) = watch::channel(None);
         let (output_tx, _) = broadcast::channel(256);
         let (command_tx, command_rx) = mpsc::channel(64);
 
@@ -92,6 +95,7 @@ impl SessionRuntime {
             state_tx,
             recreated_tx.clone(),
             detail_tx,
+            cwd_tx,
             output_tx.clone(),
             command_rx,
         ));
@@ -103,6 +107,7 @@ impl SessionRuntime {
                 recreated: recreated_rx,
                 output: output_tx,
                 state_detail: detail_rx,
+                cwd: cwd_rx,
             },
             scrollback,
             commands: command_tx,
@@ -181,6 +186,7 @@ async fn run_loop(
     state_tx: watch::Sender<SessionState>,
     recreated_tx: watch::Sender<bool>,
     detail_tx: watch::Sender<Option<String>>,
+    cwd_tx: watch::Sender<Option<String>>,
     output: broadcast::Sender<OutputChunk>,
     mut commands: mpsc::Receiver<Command>,
 ) {
@@ -205,6 +211,7 @@ async fn run_loop(
             &session_name,
             &scrollback,
             &output,
+            &cwd_tx,
             &state_tx,
             &recreated_tx,
             &mut spill,
@@ -250,6 +257,7 @@ async fn run_once(
     session_name: &str,
     scrollback: &Arc<Mutex<Scrollback>>,
     output: &broadcast::Sender<OutputChunk>,
+    cwd_tx: &watch::Sender<Option<String>>,
     state_tx: &watch::Sender<SessionState>,
     recreated_tx: &watch::Sender<bool>,
     spill: &mut Option<SpillStore>,
@@ -314,6 +322,7 @@ async fn run_once(
         let _ = recreated_tx.send(false);
     }
 
+    let mut cwd_tracker = terminal::CwdTracker::new();
     let mut channel = match connection
         .open_pty_exec(
             &spec
@@ -346,6 +355,9 @@ async fn run_once(
             message = channel.wait() => {
                 match message {
                     Some(ChannelMsg::Data { data }) => {
+                        if let Some(cwd) = cwd_tracker.feed(&data) {
+                            let _ = cwd_tx.send(Some(cwd));
+                        }
                         let seq = scrollback.lock().unwrap().append(&data);
                         if let Some(store) = spill.as_mut() {
                             if store.append(seq, &data).is_err() {
