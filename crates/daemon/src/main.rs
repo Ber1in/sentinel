@@ -106,6 +106,20 @@ async fn run_daemon() -> Result<()> {
     #[cfg(not(windows))]
     let secrets: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
 
+    // Fail loudly if the OS credential store silently behaves like a mock: losing
+    // secrets means every saved host fails with "password not stored".
+    match secrets
+        .set("__selfcheck__", "ok")
+        .and_then(|()| secrets.get("__selfcheck__"))
+    {
+        Ok(Some(value)) if value == "ok" => {
+            tracing::info!("credential store round-trip ok");
+            let _ = secrets.delete("__selfcheck__");
+        }
+        Ok(_) => tracing::error!("credential store does not persist: saved passwords will be lost"),
+        Err(error) => tracing::error!(%error, "credential store unavailable"),
+    }
+
     let store = match store::Store::open(&paths.state_db())? {
         store::Opened::Clean(store) => store,
         store::Opened::Recovered {

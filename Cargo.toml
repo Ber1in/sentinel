@@ -27,7 +27,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 ts-rs = "10"
 russh = "0.45"
 rusqlite = { version = "0.32", features = ["bundled"] }
-keyring = "3"
+keyring = { version = "3", features = ["windows-native"] }
 
 protocol = { path = "crates/protocol" }
 daemon = { path = "crates/daemon" }

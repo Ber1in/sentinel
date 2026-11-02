@@ -752,6 +752,9 @@ function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
             ? previousAuth.credential_id
             : null
 
+      if (method === 'password' && !password && previousAuth.method !== 'password') {
+        throw new Error(t('host.passwordRequired'))
+      }
       if (method === 'password' && password) {
         await window.desktop.setSecret(credentialId, password)
       }
