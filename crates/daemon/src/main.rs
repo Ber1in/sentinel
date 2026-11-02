@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::process::{Command, ExitStatus};
 use std::sync::Arc;
 use std::time::Duration;

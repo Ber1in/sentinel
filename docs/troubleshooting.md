@@ -12,9 +12,12 @@
 
 守护进程默认只输出 info 级别。需要更详细日志时，结束 `daemon.exe` 后以环境变量启动：
 
+`daemon.exe` 是窗口子系统程序（不会弹控制台），因此不能直接在终端里看输出。需要调试日志时，把标准错误重定向到文件：
+
 ```powershell
 $env:RUST_LOG = "debug"
-& "$env:LOCALAPPDATA\Programs\Sentinel\resources\daemon.exe" --supervise
+Start-Process -NoNewWindow -FilePath "$env:LOCALAPPDATA\Programs\Sentinel\resources\daemon.exe" `
+  -ArgumentList "--supervise" -RedirectStandardError "$env:TEMP\sentinel-debug.log"
 ```
 
 ## 连接失败怎么定位

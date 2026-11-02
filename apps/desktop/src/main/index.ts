@@ -42,6 +42,7 @@ function spawnDaemon(): void {
   // --supervise keeps the daemon alive across crashes, even after the GUI exits.
   const child = spawn(binary, ['--supervise'], {
     detached: true,
+    windowsHide: true,
     stdio: ['ignore', target, target]
   })
   child.on('error', (error) => console.warn(`cannot start daemon: ${error.message}`))
