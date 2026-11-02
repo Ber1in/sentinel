@@ -962,7 +962,12 @@ dependencies = [
 name = "persistence"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "protocol",
+ "russh",
+ "ssh",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
