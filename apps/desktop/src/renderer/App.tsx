@@ -42,6 +42,15 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editing, setEditing] = useState<{ host: HostSummary; isNew: boolean } | null>(null)
   const [daemonOnline, setDaemonOnline] = useState(true)
+
+  /** Exactly one tab per session; duplicates would multiply every keystroke. */
+  const addTab = useCallback((tab: Tab) => {
+    setTabs((current) => {
+      if (current.some((item) => item.sessionId === tab.sessionId)) return current
+      return [...current, tab]
+    })
+    setActiveTab(tab.id)
+  }, [])
   const [toasts, setToasts] = useState<Toast[]>([])
   const terminals = useRef(new Map<number, Terminal>())
   const t = useMemo(() => translator(language), [language])
@@ -178,15 +187,12 @@ export function App() {
           state: 'connecting',
           provider: reply.provider
         }
-        setTabs((current) =>
-          current.some((item) => item.sessionId === tab.sessionId) ? current : [...current, tab]
-        )
-        setActiveTab(tab.id)
+        addTab(tab)
       } catch (error) {
         pushToast((error as Error).message)
       }
     },
-    [pushToast]
+    [pushToast, addTab]
   )
 
   const closeTab = useCallback(async (tab: Tab) => {
@@ -351,10 +357,7 @@ export function App() {
         t={t}
         hosts={hosts}
         onDone={(tab) => {
-          setTabs((current) =>
-            current.some((item) => item.sessionId === tab.sessionId) ? current : [...current, tab]
-          )
-          setActiveTab(tab.id)
+          addTab(tab)
           void refreshHosts()
         }}
         onError={(message) => pushToast(message)}

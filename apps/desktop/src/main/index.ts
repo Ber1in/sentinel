@@ -7,6 +7,12 @@ import type { HostSpec } from '../shared/HostSpec'
 import { DaemonClient, ProtocolMismatchError, type OutputEvent, type SessionStateEvent } from './daemon-client'
 
 let client: DaemonClient | null = null
+/**
+ * In-flight connection attempt. Several IPC handlers and the session-restore effect call
+ * `getClient()` at once; without this each would open its own WebSocket and the daemon
+ * would broadcast every output chunk once per connection (tripled terminal output).
+ */
+let clientPromise: Promise<DaemonClient> | null = null
 let window: BrowserWindow | null = null
 
 function forwardOutput(event: OutputEvent): void {
@@ -142,9 +148,21 @@ async function connectOrStart(): Promise<DaemonClient> {
 
 async function getClient(): Promise<DaemonClient> {
   if (client) return client
-  client = await connectOrStart()
-  console.log(`connected to daemon pid=${client.info.pid} protocol=${client.info.protocol_version}`)
-  return client
+  if (!clientPromise) {
+    clientPromise = connectOrStart()
+      .then((daemon) => {
+        if (client && client !== daemon) client.close()
+        client = daemon
+        console.log(
+          `connected to daemon pid=${daemon.info.pid} protocol=${daemon.info.protocol_version}`
+        )
+        return daemon
+      })
+      .finally(() => {
+        clientPromise = null
+      })
+  }
+  return clientPromise
 }
 
 function registerIpc(): void {
@@ -171,6 +189,7 @@ function registerIpc(): void {
   ipcMain.handle('daemon:restart', async () => {
     client?.close()
     client = null
+    clientPromise = null
     await stopDaemon()
     spawnDaemon()
     return getClient()

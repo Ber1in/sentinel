@@ -36,7 +36,12 @@ struct Managed {
     summary: SessionSummary,
     runtime: SessionRuntime,
     watcher: JoinHandle<()>,
+    /// Last accepted input, used to drop duplicate deliveries from the client.
+    last_input: Mutex<(Vec<u8>, std::time::Instant)>,
 }
+
+/// Two identical payloads closer than this are treated as a duplicate delivery.
+const DUPLICATE_INPUT_WINDOW: std::time::Duration = std::time::Duration::from_millis(10);
 
 pub struct Manager {
     /// Short client id used in remote session names.
@@ -410,6 +415,7 @@ impl Manager {
                 summary: summary.clone(),
                 runtime,
                 watcher,
+                last_input: Mutex::new((Vec::new(), std::time::Instant::now())),
             },
         );
         Ok(summary)

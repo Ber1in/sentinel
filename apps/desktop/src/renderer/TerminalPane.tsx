@@ -4,6 +4,12 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
 
+/**
+ * Defensive: a session must own exactly one terminal. If a duplicate pane is ever
+ * mounted, the second one stays inert instead of sending every keystroke twice.
+ */
+const mounted = new Set<string>()
+
 interface Props {
   sessionId: string
   numeric: number
@@ -24,6 +30,11 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
   useEffect(() => {
     const element = container.current
     if (!element) return
+    if (mounted.has(sessionId)) {
+      console.warn(`duplicate terminal for session ${sessionId} ignored`)
+      return
+    }
+    mounted.add(sessionId)
 
     const term = new Terminal({
       fontFamily: 'JetBrains Mono, monospace',
@@ -109,6 +120,7 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
       onRegister(numeric, null)
       term.dispose()
       terminal.current = null
+      mounted.delete(sessionId)
     }
   }, [numeric, sessionId, onRegister])
 
