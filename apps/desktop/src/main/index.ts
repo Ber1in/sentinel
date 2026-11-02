@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 
-import { DaemonClient } from './daemon-client'
+import { DaemonClient, ProtocolMismatchError } from './daemon-client'
 
 let client: DaemonClient | null = null
 
@@ -16,10 +16,28 @@ function registerIpc(): void {
   ipcMain.handle('daemon:status', async () => {
     try {
       const daemon = await getClient()
-      return { connected: true, info: daemon.info, port: daemon.port, error: null }
+      return { connected: true, info: daemon.info, port: daemon.port, error: null, mismatch: null }
     } catch (error) {
       client = null
-      return { connected: false, info: null, port: null, error: (error as Error).message }
+      if (error instanceof ProtocolMismatchError) {
+        console.warn(
+          `protocol mismatch: daemon v${error.daemonVersion}, client v${error.clientVersion}`
+        )
+        return {
+          connected: false,
+          info: null,
+          port: null,
+          error: error.message,
+          mismatch: { daemonVersion: error.daemonVersion, clientVersion: error.clientVersion }
+        }
+      }
+      return {
+        connected: false,
+        info: null,
+        port: null,
+        error: (error as Error).message,
+        mismatch: null
+      }
     }
   })
 

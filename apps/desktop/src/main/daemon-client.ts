@@ -28,6 +28,18 @@ export function daemonDataDir(): string {
   return join(base, 'sshTerminal')
 }
 
+export class ProtocolMismatchError extends Error {
+  constructor(
+    readonly daemonVersion: number,
+    readonly clientVersion: number
+  ) {
+    super(
+      `daemon speaks protocol v${daemonVersion} but this client speaks v${clientVersion}`
+    )
+    this.name = 'ProtocolMismatchError'
+  }
+}
+
 interface Pending {
   resolve: (result: OpResult) => void
   reject: (error: Error) => void
@@ -61,9 +73,7 @@ export class DaemonClient {
     ) as DaemonFile
 
     if (file.protocol_version !== PROTOCOL_VERSION) {
-      throw new Error(
-        `protocol mismatch: daemon=${file.protocol_version} client=${PROTOCOL_VERSION}`
-      )
+      throw new ProtocolMismatchError(file.protocol_version, PROTOCOL_VERSION)
     }
 
     const socket = new WebSocket(`ws://127.0.0.1:${file.port}`)

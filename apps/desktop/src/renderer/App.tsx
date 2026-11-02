@@ -8,10 +8,17 @@ interface Status {
   info: ServerInfo | null
   port: number | null
   error: string | null
+  mismatch: { daemonVersion: number; clientVersion: number } | null
 }
 
 export function App() {
-  const [status, setStatus] = useState<Status>({ connected: false, info: null, port: null, error: null })
+  const [status, setStatus] = useState<Status>({
+    connected: false,
+    info: null,
+    port: null,
+    error: null,
+    mismatch: null
+  })
   const [sessions, setSessions] = useState<SessionSummary[]>([])
 
   const refresh = useCallback(async () => {
@@ -42,6 +49,11 @@ export function App() {
             <li>端口: {status.port}</li>
             <li>会话数: {sessions.length}</li>
           </ul>
+        ) : status.mismatch ? (
+          <p style={{ color: '#e5534b' }}>
+            协议不匹配：守护进程 v{status.mismatch.daemonVersion}，客户端 v
+            {status.mismatch.clientVersion}。请重启守护进程后再连接。
+          </p>
         ) : (
           <p style={{ color: '#e0b341' }}>未连接：{status.error ?? '守护进程未运行'}</p>
         )}
