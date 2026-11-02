@@ -1,24 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronsRight, Command, Eye, EyeOff, Moon, Pencil, Plus, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
+import { ChevronsRight, Columns2, Command, Eye, EyeOff, Moon, Pencil, Plus, Rows2, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
 import type { HostSummary } from '../shared/HostSummary'
 import type { SessionState } from '../shared/SessionState'
 import type { ProviderKind } from '../shared/ProviderKind'
 import type { Terminal } from '@xterm/xterm'
 import { TerminalPane } from './TerminalPane'
+import { SplitView, type SplitDirection } from './SplitView'
 import { detectLanguage, translator, type Language } from './i18n'
 
 type Theme = 'dark' | 'light'
 
-interface Tab {
+interface PaneState {
   id: string
+  ratio: number
+  hostId: string
   sessionId: string
   numeric: number
-  hostId: string
   title: string
   state: SessionState
   provider: ProviderKind
 }
+
+interface Tab {
+  id: string
+  direction: SplitDirection
+  panes: PaneState[]
+}
+
+const paneOf = (tab: Tab): PaneState => tab.panes[0]
+const paneTitle = (tab: Tab): string => paneOf(tab).title
+const paneState = (tab: Tab): SessionState => paneOf(tab).state
 
 interface Toast {
   id: number
@@ -46,10 +58,135 @@ export function App() {
   /** Exactly one tab per session; duplicates would multiply every keystroke. */
   const addTab = useCallback((tab: Tab) => {
     setTabs((current) => {
-      if (current.some((item) => item.sessionId === tab.sessionId)) return current
-      return [...current, tab]
+      const duplicate = current.some((item) =>
+        item.panes.some((pane) => tab.panes.some((next) => next.sessionId === pane.sessionId))
+      )
+      return duplicate ? current : [...current, tab]
     })
     setActiveTab(tab.id)
+  }, [])
+
+  /** Update a specific pane (needed before its session id is known). */
+  const patchPaneIn = useCallback((tabId: string, paneId: string, patch: Partial<PaneState>) => {
+    setTabs((current) =>
+      current.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              panes: tab.panes.map((pane) => (pane.id === paneId ? { ...pane, ...patch } : pane))
+            }
+          : tab
+      )
+    )
+  }, [])
+
+  // Restore the persisted layout, without connecting anything yet.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const layout = await window.desktop.loadLayout()
+        if (cancelled || layout.tabs.length === 0) return
+        const tabsLayout = layout.tabs as Array<{ id: string; title: string; sort_order: number }>
+        const panesLayout = layout.panes as Array<{
+          id: string
+          tab_id: string
+          direction: string | null
+          ratio: number
+          host_id: string | null
+          session_id: string | null
+          sort_order: number
+        }>
+        const built: Tab[] = tabsLayout.map((tab) => ({
+          id: tab.id,
+          direction: (panesLayout.find((pane) => pane.tab_id === tab.id)?.direction ??
+            'horizontal') as SplitDirection,
+          panes: panesLayout
+            .filter((pane) => pane.tab_id === tab.id)
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((pane) => ({
+              id: pane.id,
+              ratio: pane.ratio,
+              hostId: pane.host_id ?? '',
+              sessionId: pane.session_id ?? '',
+              numeric: 0,
+              title: tab.title,
+              state: 'detached' as SessionState,
+              provider: 'tmux' as ProviderKind
+            }))
+        }))
+        setTabs((current) => (current.length > 0 ? current : built))
+      } catch {
+        // No saved layout yet.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Connect restored panes lazily: only the tab the user opens dials out.
+  useEffect(() => {
+    const tab = tabs.find((item) => item.id === activeTab)
+    if (!tab) return
+    for (const pane of tab.panes) {
+      if (pane.numeric !== 0 || !pane.hostId) continue
+      const host = hosts.find((item) => item.id === pane.hostId)
+      if (!host) continue
+      void window.desktop
+        .createSession(
+          {
+            host_id: host.id,
+            hostname: host.hostname,
+            port: host.port,
+            username: host.username,
+            auth: host.auth
+          },
+          pane.id,
+          null
+        )
+        .then((reply) =>
+          patchPaneIn(tab.id, pane.id, {
+            sessionId: reply.session_id,
+            numeric: reply.numeric,
+            state: 'connecting'
+          })
+        )
+        .catch(() => undefined)
+    }
+  }, [activeTab, tabs, hosts, patchPaneIn])
+
+  // Persist the layout (debounced) whenever its shape or ratios change.
+  useEffect(() => {
+    if (tabs.length === 0) return
+    const timer = setTimeout(() => {
+      void window.desktop.saveLayout(
+        tabs.map((tab, index) => ({ id: tab.id, title: paneTitle(tab), sort_order: index })),
+        tabs.flatMap((tab) =>
+          tab.panes.map((pane, index) => ({
+            id: pane.id,
+            tab_id: tab.id,
+            parent_id: null,
+            direction: tab.direction,
+            ratio: pane.ratio,
+            host_id: pane.hostId || null,
+            session_id: pane.sessionId || null,
+            sort_order: index
+          }))
+        )
+      )
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [tabs])
+
+  /** Update one pane wherever it lives. */
+  const patchPane = useCallback((sessionId: string, patch: Partial<PaneState>) => {
+    setTabs((current) =>
+      current.map((tab) => ({
+        ...tab,
+        panes: tab.panes.map((pane) => (pane.sessionId === sessionId ? { ...pane, ...patch } : pane))
+      }))
+    )
   }, [])
   const [toasts, setToasts] = useState<Toast[]>([])
   const terminals = useRef(new Map<number, Terminal>())
@@ -103,17 +240,24 @@ export function App() {
         const sessions = await window.desktop.listSessions()
         if (cancelled || sessions.length === 0) return
         setTabs((current) => {
-          const known = new Set(current.map((tab) => tab.sessionId))
+          const known = new Set(current.flatMap((tab) => tab.panes.map((pane) => pane.sessionId)))
           const restored = sessions
             .filter((session) => !known.has(session.session_id))
             .map((session) => ({
               id: session.session_id,
-              sessionId: session.session_id,
-              numeric: session.numeric,
-              hostId: session.host_id,
-              title: session.title,
-              state: session.state,
-              provider: session.provider
+              direction: 'horizontal' as SplitDirection,
+              panes: [
+                {
+                  id: 'main',
+                  ratio: 1,
+                  hostId: session.host_id,
+                  sessionId: session.session_id,
+                  numeric: session.numeric,
+                  title: session.title,
+                  state: session.state,
+                  provider: session.provider
+                }
+              ]
             }))
           return [...current, ...restored]
         })
@@ -140,9 +284,14 @@ export function App() {
   useEffect(() => {
     return window.desktop.onSessionState((data) => {
       setTabs((current) =>
-        current.map((tab) =>
-          tab.sessionId === data.sessionId ? { ...tab, state: data.state as SessionState } : tab
-        )
+        current.map((tab) => ({
+          ...tab,
+          panes: tab.panes.map((pane) =>
+            pane.sessionId === data.sessionId
+              ? { ...pane, state: data.state as SessionState }
+              : pane
+          )
+        }))
       )
     })
   }, [])
@@ -178,16 +327,17 @@ export function App() {
           'main',
           null
         )
-        const tab: Tab = {
-          id: reply.session_id,
+        const pane: PaneState = {
+          id: 'main',
+          ratio: 1,
+          hostId,
           sessionId: reply.session_id,
           numeric: reply.numeric,
-          hostId,
           title: `${host.username}@${host.hostname}`,
           state: 'connecting',
           provider: reply.provider
         }
-        addTab(tab)
+        addTab({ id: reply.session_id, direction: 'horizontal', panes: [pane] })
       } catch (error) {
         pushToast((error as Error).message)
       }
@@ -196,10 +346,62 @@ export function App() {
   )
 
   const closeTab = useCallback(async (tab: Tab) => {
-    await window.desktop.detach(tab.sessionId)
+    await Promise.all(tab.panes.map((pane) => window.desktop.detach(pane.sessionId)))
     setTabs((current) => current.filter((item) => item.id !== tab.id))
     setActiveTab((current) => (current === tab.id ? null : current))
   }, [])
+
+  /** Split the active tab using the first pane's host. */
+  const splitTab = useCallback(
+    async (tab: Tab, direction: SplitDirection) => {
+      const source = paneOf(tab)
+      const host = hosts.find((item) => item.id === source.hostId)
+      if (!host) {
+        pushToast('host not found')
+        return
+      }
+      try {
+        const paneId = `pane-${crypto.randomUUID()}`
+        const reply = await window.desktop.createSession(
+          {
+            host_id: host.id,
+            hostname: host.hostname,
+            port: host.port,
+            username: host.username,
+            auth: host.auth
+          },
+          paneId,
+          null
+        )
+        setTabs((current) =>
+          current.map((item) =>
+            item.id === tab.id
+              ? {
+                  ...item,
+                  direction,
+                  panes: [
+                    ...item.panes.map((pane) => ({ ...pane, ratio: item.panes.length })),
+                    {
+                      id: paneId,
+                      ratio: 1,
+                      hostId: host.id,
+                      sessionId: reply.session_id,
+                      numeric: reply.numeric,
+                      title: `${host.username}@${host.hostname}`,
+                      state: 'connecting' as SessionState,
+                      provider: reply.provider
+                    }
+                  ]
+                }
+              : item
+          )
+        )
+      } catch (error) {
+        pushToast((error as Error).message)
+      }
+    },
+    [hosts, pushToast]
+  )
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-canvas text-ink">
@@ -307,8 +509,8 @@ export function App() {
                 }`}
                 style={activeTab === tab.id ? { boxShadow: 'inset 0 -2px 0 var(--accent)' } : undefined}
               >
-                <span className="status-dot" style={{ background: stateColor(tab.state) }} />
-                <span className="max-w-[220px] truncate">{tab.title}</span>
+                <span className="status-dot" style={{ background: stateColor(paneState(tab)) }} />
+                <span className="max-w-[220px] truncate">{paneTitle(tab)}</span>
                 <button
                   className="grid h-4 w-4 place-items-center rounded text-muted opacity-0 transition hover:bg-elevated hover:text-ink group-hover:opacity-100"
                   onClick={(event) => {
@@ -320,6 +522,30 @@ export function App() {
                 </button>
               </div>
             ))}
+            {activeTab ? (
+              <>
+                <button
+                  className="grid w-9 place-items-center text-muted transition hover:text-ink"
+                  title={t('action.splitRight')}
+                  onClick={() => {
+                    const tab = tabs.find((item) => item.id === activeTab)
+                    if (tab) void splitTab(tab, 'horizontal')
+                  }}
+                >
+                  <Columns2 size={14} />
+                </button>
+                <button
+                  className="grid w-9 place-items-center text-muted transition hover:text-ink"
+                  title={t('action.splitDown')}
+                  onClick={() => {
+                    const tab = tabs.find((item) => item.id === activeTab)
+                    if (tab) void splitTab(tab, 'vertical')
+                  }}
+                >
+                  <Rows2 size={14} />
+                </button>
+              </>
+            ) : null}
             <button
               className="grid w-9 place-items-center text-muted transition hover:text-ink"
               onClick={() => setDialogOpen(true)}
@@ -334,13 +560,37 @@ export function App() {
               <EmptyState title={t('empty.title')} body={t('empty.body')} onCreate={() => setDialogOpen(true)} />
             ) : (
               tabs.map((tab) => (
-                <div key={tab.id} className="absolute inset-0">
-                  <TerminalPane
-                    sessionId={tab.sessionId}
-                    numeric={tab.numeric}
-                    active={activeTab === tab.id}
-                    onRegister={register}
-                    onReady={() => void window.desktop.resync(tab.sessionId)}
+                <div
+                  key={tab.id}
+                  className="absolute inset-0"
+                  style={{ display: activeTab === tab.id ? 'block' : 'none' }}
+                >
+                  <SplitView
+                    direction={tab.direction}
+                    panes={tab.panes.map((pane) => ({ id: pane.id, ratio: pane.ratio, payload: pane }))}
+                    onRatioChange={(paneId, ratio) =>
+                      setTabs((current) =>
+                        current.map((item) =>
+                          item.id === tab.id
+                            ? {
+                                ...item,
+                                panes: item.panes.map((pane) =>
+                                  pane.id === paneId ? { ...pane, ratio } : pane
+                                )
+                              }
+                            : item
+                        )
+                      )
+                    }
+                    renderPane={({ payload }) => (
+                      <TerminalPane
+                        sessionId={payload.sessionId}
+                        numeric={payload.numeric}
+                        active={activeTab === tab.id}
+                        onRegister={register}
+                        onReady={() => void window.desktop.resync(payload.sessionId)}
+                      />
+                    )}
                   />
                 </div>
               ))
@@ -459,10 +709,11 @@ function EmptyState({ title, body, onCreate }: { title: string; body: string; on
 
 function StatusBar({ tabs, activeTab, label }: { tabs: Tab[]; activeTab: string | null; label: (key: string) => string }) {
   const active = tabs.find((tab) => tab.id === activeTab)
+  const title = active ? paneTitle(active) : ''
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line px-3 text-[11px] text-muted">
-      <span>{active ? `${label(`state.${active.state}`)} · ${active.provider === 'tmux' ? 'tmux' : 'no persistence'}` : '—'}</span>
-      <span>{active ? active.title : ''}</span>
+      <span>{active ? `${label(`state.${paneState(active)}`)} · ${active.panes.length > 1 ? `${active.panes.length} panes` : 'tmux'}` : '—'}</span>
+      <span>{title}</span>
     </footer>
   )
 }
@@ -515,12 +766,19 @@ function QuickConnect(props: {
       )
       onDone({
         id: reply.session_id,
-        sessionId: reply.session_id,
-        numeric: reply.numeric,
-        hostId,
-        title: `${user}@${host}`,
-        state: 'connecting',
-        provider: reply.provider
+        direction: 'horizontal',
+        panes: [
+          {
+            id: 'main',
+            ratio: 1,
+            hostId,
+            sessionId: reply.session_id,
+            numeric: reply.numeric,
+            title: `${user}@${host}`,
+            state: 'connecting',
+            provider: reply.provider
+          }
+        ]
       })
       onOpenChange(false)
       setPassword('')
