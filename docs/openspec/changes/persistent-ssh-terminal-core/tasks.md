@@ -4,7 +4,7 @@
 
 - [x] 1.1 `git init` 并提交 `.gitignore`（Rust `target/`、Node `node_modules/`、`dist/`、构建产物），验证：`git status` 干净且 `git log` 有一条初始提交 <!-- comet-task:a2769419-e046-4971-b233-8401849c78de -->
 - [x] 1.2 建立 Cargo workspace 与 `crates/{protocol,daemon,ssh,persistence,terminal,store}` 骨架，每个 crate 一个最小可编译入口，验证：`cargo check --workspace` 通过 <!-- comet-task:3d42d8ad-ede0-4d39-b428-8cd87a76266a -->
-- [ ] 1.3 建立 `apps/desktop`（Electron + React + Vite + TypeScript）骨架，能启动空白窗口，验证：`pnpm build` 与 `pnpm dev` 均可启动 <!-- comet-task:4c5c0959-86db-462e-9a43-faa0073bdfd8 -->
+- [x] 1.3 建立 `apps/desktop`（Electron + React + Vite + TypeScript）骨架，能启动空白窗口，验证：`pnpm build` 与 `pnpm dev` 均可启动 <!-- comet-task:4c5c0959-86db-462e-9a43-faa0073bdfd8 -->
 - [ ] 1.4 建立协议类型导出管线：`crates/protocol` 为单一事实来源，构建期生成 TS 类型文件，验证：新增一个消息类型后重新生成，TS 侧出现对应定义且类型检查通过 <!-- comet-task:555bea40-5d6d-4a7f-8fa2-174cae873252 -->
 - [ ] 1.5 配置 CI：在 Linux 上跑 `cargo test --workspace` 与前端 `pnpm build`，验证：等价命令在本地全部通过，workflow 文件语法校验通过 <!-- comet-task:9090fe9e-d9c3-4973-b75d-e23a9d18bdde -->
 - [ ] 1.6 写 `README.md` 的架构概览、目录说明、构建与运行步骤、远端 tmux 版本要求，验证：按 README 从空环境走一遍能启动空白窗口 <!-- comet-task:c7c19623-c09a-4de5-b874-a75d1074f3c2 -->
