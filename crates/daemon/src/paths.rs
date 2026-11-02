@@ -39,6 +39,11 @@ impl DaemonPaths {
         self.root.join("daemon.lock")
     }
 
+    /// Lock that keeps a single supervisor per user.
+    pub fn supervisor_lock(&self) -> PathBuf {
+        self.root.join("supervisor.lock")
+    }
+
     pub fn scrollback_dir(&self) -> PathBuf {
         self.root.join("scrollback")
     }

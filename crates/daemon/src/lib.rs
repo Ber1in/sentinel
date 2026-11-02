@@ -21,4 +21,4 @@ pub use instance::SingleInstance;
 pub use manager::{Manager, RoutedChunk, StateChange};
 pub use paths::DaemonPaths;
 pub use runner::{Command, SessionEvents, SessionRuntime, SessionSpec};
-pub use server::DaemonServer;
+pub use server::{DaemonServer, RESTART_EXIT_CODE};

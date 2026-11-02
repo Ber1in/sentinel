@@ -402,6 +402,16 @@ impl Manager {
         Ok(summary)
     }
 
+    /// Detach every session without killing remote processes. Used before a graceful
+    /// restart so tmux sessions survive the daemon swap.
+    pub fn shutdown_all(&self) {
+        let mut sessions = self.sessions.lock().unwrap();
+        for (_, managed) in sessions.drain() {
+            managed.watcher.abort();
+            managed.runtime.try_send(Command::Detach);
+        }
+    }
+
     pub fn send_input(&self, session_id: &str, bytes: Vec<u8>) -> bool {
         let sessions = self.sessions.lock().unwrap();
         let Some(managed) = sessions.get(session_id) else {

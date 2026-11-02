@@ -26,6 +26,9 @@ futures-util = "0.3"
 rand = "0.8"
 fs2 = "0.4"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+
 [dev-dependencies]
 ssh.workspace = true
 store.workspace = true

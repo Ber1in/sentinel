@@ -39,7 +39,8 @@ function daemonLogTarget(): number | 'ignore' {
 function spawnDaemon(): void {
   const binary = daemonBinary()
   const target = daemonLogTarget()
-  const child = spawn(binary, [], {
+  // --supervise keeps the daemon alive across crashes, even after the GUI exits.
+  const child = spawn(binary, ['--supervise'], {
     detached: true,
     stdio: ['ignore', target, target]
   })

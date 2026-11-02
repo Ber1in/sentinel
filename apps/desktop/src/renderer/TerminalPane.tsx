@@ -72,6 +72,24 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
       void window.desktop.sendInput(sessionId, new TextEncoder().encode(data))
     })
 
+    // Windows Terminal style copy/paste. xterm already wraps pasted text in bracketed
+    // paste sequences when the remote application enabled DECSET 2004.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
+        const selection = term.getSelection()
+        if (selection) void navigator.clipboard.writeText(selection)
+        return false
+      }
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'v') {
+        void navigator.clipboard.readText().then((text) => {
+          if (text) term.paste(text)
+        })
+        return false
+      }
+      return true
+    })
+
     const observer = new ResizeObserver(() => sync())
     observer.observe(element)
     requestAnimationFrame(sync)

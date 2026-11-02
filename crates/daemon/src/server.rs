@@ -28,6 +28,9 @@ pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Default number of lines replayed to a GUI that attaches.
 const REPLAY_LINES: usize = 2_000;
 
+/// Exit code telling the supervisor "restart me, this was intentional".
+pub const RESTART_EXIT_CODE: i32 = 75;
+
 pub struct DaemonServer {
     pub addr: SocketAddr,
     pub token: String,
@@ -279,7 +282,16 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
             manager.replay(&session_id, REPLAY_LINES);
             OpResult::Ok
         }
-        ClientOp::RestartDaemon => OpResult::Ok,
+        ClientOp::RestartDaemon => {
+            // Detach first so remote tmux sessions outlive the daemon swap; the
+            // supervisor restarts us and the GUI reattaches automatically.
+            manager.shutdown_all();
+            tokio::spawn(async {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                std::process::exit(RESTART_EXIT_CODE);
+            });
+            OpResult::Ok
+        }
     };
     Some(ServerMessage::Reply { id, result })
 }
