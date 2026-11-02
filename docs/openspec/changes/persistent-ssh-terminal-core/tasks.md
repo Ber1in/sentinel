@@ -27,11 +27,11 @@
 
 ## 4. 持久化 provider（tmux）
 
-- [ ] 4.1 定义 `PersistenceProvider` trait 与确定性会话名生成，验证：同名生成幂等、不同标签名冲突的单测 <!-- comet-task:664161f3-b50a-40bd-936a-b4789c536a4f -->
-- [ ] 4.2 实现 tmux provider 的 ensure/attach/detach/resize，验证：真实主机上关闭客户端后 `tmux ls` 仍可见会话，重开后接回 <!-- comet-task:1bbb0bcd-6806-4b34-968d-b9567c70889e -->
-- [ ] 4.3 实现 `capture-pane` 快照回放并在回放后触发重绘，验证：`vim`/`htop` 重连后画面可用；普通输出颜色抽查一致 <!-- comet-task:660adccd-16d2-4563-9a4d-c9c5b3116c21 -->
-- [ ] 4.4 实现 tmux 缺失检测、安装提示与「无持久化」降级模式，验证：无 tmux 的容器中触发提示，选择降级后界面持续标注无持久化 <!-- comet-task:658833b9-1ad4-4a8e-8cd9-1edacd76482b -->
-- [ ] 4.5 在 `docs/providers.md` 记录 provider 契约、tmux 参数选择（`-f` 最小配置、`-u`）与降级语义，验证：文档参数与代码常量一致 <!-- comet-task:1b994678-8b3d-49cd-ab4d-44f6dda69518 -->
+- [x] 4.1 定义 `PersistenceProvider` trait 与确定性会话名生成，验证：同名生成幂等、不同标签名冲突的单测 <!-- comet-task:664161f3-b50a-40bd-936a-b4789c536a4f -->
+- [x] 4.2 实现 tmux provider 的 ensure/attach/detach/resize，验证：真实主机上关闭客户端后 `tmux ls` 仍可见会话，重开后接回 <!-- comet-task:1bbb0bcd-6806-4b34-968d-b9567c70889e -->
+- [x] 4.3 实现 `capture-pane` 快照回放并在回放后触发重绘，验证：`vim`/`htop` 重连后画面可用；普通输出颜色抽查一致 <!-- comet-task:660adccd-16d2-4563-9a4d-c9c5b3116c21 -->
+- [x] 4.4 实现 tmux 缺失检测、安装提示与「无持久化」降级模式，验证：无 tmux 的容器中触发提示，选择降级后界面持续标注无持久化 <!-- comet-task:658833b9-1ad4-4a8e-8cd9-1edacd76482b -->
+- [x] 4.5 在 `docs/providers.md` 记录 provider 契约、tmux 参数选择（`-f` 最小配置、`-u`）与降级语义，验证：文档参数与代码常量一致 <!-- comet-task:1b994678-8b3d-49cd-ab4d-44f6dda69518 -->
 
 ## 5. 重连状态机
 
