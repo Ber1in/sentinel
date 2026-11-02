@@ -112,9 +112,9 @@ impl Manager {
             username: host.username.clone(),
             auth_ref: Some(match &host.auth {
                 AuthMethod::Password { credential_id }
-                | AuthMethod::KeyboardInteractive { credential_id: Some(credential_id) } => {
-                    credential_id.clone()
-                }
+                | AuthMethod::KeyboardInteractive {
+                    credential_id: Some(credential_id),
+                } => credential_id.clone(),
                 AuthMethod::Key { key_path, .. } => key_path.clone(),
                 _ => String::new(),
             }),
@@ -234,32 +234,45 @@ impl Manager {
 
         self.sessions.lock().unwrap().insert(
             session_id,
-            Managed { numeric, summary: summary.clone(), runtime, watcher },
+            Managed {
+                numeric,
+                summary: summary.clone(),
+                runtime,
+                watcher,
+            },
         );
         Ok(summary)
     }
 
     pub fn send_input(&self, session_id: &str, bytes: Vec<u8>) -> bool {
         let sessions = self.sessions.lock().unwrap();
-        let Some(managed) = sessions.get(session_id) else { return false };
+        let Some(managed) = sessions.get(session_id) else {
+            return false;
+        };
         managed.runtime.try_send(Command::Input(bytes))
     }
 
     pub fn resize(&self, session_id: &str, cols: u16, rows: u16) -> bool {
         let sessions = self.sessions.lock().unwrap();
-        let Some(managed) = sessions.get(session_id) else { return false };
+        let Some(managed) = sessions.get(session_id) else {
+            return false;
+        };
         managed.runtime.try_send(Command::Resize { cols, rows })
     }
 
     pub fn detach(&self, session_id: &str) -> bool {
         let sessions = self.sessions.lock().unwrap();
-        let Some(managed) = sessions.get(session_id) else { return false };
+        let Some(managed) = sessions.get(session_id) else {
+            return false;
+        };
         managed.runtime.try_send(Command::Detach)
     }
 
     pub fn destroy(&self, session_id: &str) -> bool {
         let mut sessions = self.sessions.lock().unwrap();
-        let Some(managed) = sessions.remove(session_id) else { return false };
+        let Some(managed) = sessions.remove(session_id) else {
+            return false;
+        };
         managed.watcher.abort();
         managed.runtime.try_send(Command::Destroy)
     }
@@ -321,11 +334,15 @@ impl Manager {
         };
         match &host.auth {
             AuthMethod::Password { credential_id } => {
-                let password = secret(credential_id)?
-                    .ok_or_else(|| ProtocolError::new(ErrorCode::AuthFailed, "password not stored"))?;
+                let password = secret(credential_id)?.ok_or_else(|| {
+                    ProtocolError::new(ErrorCode::AuthFailed, "password not stored")
+                })?;
                 Ok(Credentials::Password(password))
             }
-            AuthMethod::Key { key_path, credential_id } => {
+            AuthMethod::Key {
+                key_path,
+                credential_id,
+            } => {
                 let passphrase = match credential_id {
                     Some(id) => secret(id)?,
                     None => None,

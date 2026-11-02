@@ -39,7 +39,11 @@ async fn main() -> Result<()> {
     let secrets: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
     let store = match store::Store::open(&paths.state_db())? {
         store::Opened::Clean(store) => store,
-        store::Opened::Recovered { store, backup, reason } => {
+        store::Opened::Recovered {
+            store,
+            backup,
+            reason,
+        } => {
             tracing::warn!(backup = %backup.display(), %reason, "state database was corrupt; recreated");
             store
         }

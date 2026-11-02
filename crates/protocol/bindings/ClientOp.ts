@@ -4,4 +4,4 @@ import type { HostSpec } from "./HostSpec";
 /**
  * Operations the GUI can request from the daemon.
  */
-export type ClientOp = { "op": "list_sessions" } | { "op": "create_session", host: HostSpec, pane_id: string, cwd: string | null, } | { "op": "attach", session_id: string, } | { "op": "detach", session_id: string, } | { "op": "destroy", session_id: string, } | { "op": "resize", session_id: string, cols: number, rows: number, } | { "op": "resync", session_id: string, from_seq: bigint, } | { "op": "restart_daemon" };
+export type ClientOp = { "op": "list_sessions" } | { "op": "list_hosts" } | { "op": "set_secret", id: string, secret: string, } | { "op": "create_session", host: HostSpec, pane_id: string, cwd: string | null, } | { "op": "attach", session_id: string, } | { "op": "detach", session_id: string, } | { "op": "destroy", session_id: string, } | { "op": "resize", session_id: string, cols: number, rows: number, } | { "op": "resync", session_id: string, from_seq: bigint, } | { "op": "restart_daemon" };

@@ -3,9 +3,9 @@ use std::time::Duration;
 use daemon::config::Config;
 use daemon::credentials::MemoryStore;
 use daemon::{DaemonPaths, DaemonServer, Manager};
-use std::sync::Arc;
 use futures_util::{SinkExt, StreamExt};
 use protocol::{ClientMessage, ServerMessage, PROTOCOL_VERSION};
+use std::sync::Arc;
 use tokio_tungstenite::tungstenite::Message;
 
 async fn start(paths: &DaemonPaths) -> DaemonServer {
@@ -195,7 +195,10 @@ async fn list_sessions_replies_with_an_empty_list() {
 
 #[tokio::test]
 async fn create_session_streams_terminal_output() {
-    let Some(host) = std::env::var("SSHTERM_TEST_HOST").ok().filter(|v| !v.is_empty()) else {
+    let Some(host) = std::env::var("SSHTERM_TEST_HOST")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
         return eprintln!("skipped: no test sshd");
     };
     let port: u16 = std::env::var("SSHTERM_TEST_PORT").unwrap().parse().unwrap();
@@ -234,7 +237,9 @@ async fn create_session_streams_terminal_output() {
             hostname: host,
             port,
             username: user,
-            auth: protocol::AuthMethod::Password { credential_id: "host-1:password".into() },
+            auth: protocol::AuthMethod::Password {
+                credential_id: "host-1:password".into(),
+            },
         },
         pane_id: "pane-1".into(),
         cwd: Some("/tmp".into()),
@@ -309,12 +314,17 @@ async fn create_session_streams_terminal_output() {
             _ => break,
         }
     }
-    assert!(text.contains("stream-marker"), "terminal output missing: {text:?}");
+    assert!(
+        text.contains("stream-marker"),
+        "terminal output missing: {text:?}"
+    );
 
     ws.send(Message::Text(
         serde_json::to_string(&ClientMessage::Request {
             id: 2,
-            op: protocol::ClientOp::Destroy { session_id: "host-1:pane-1".into() },
+            op: protocol::ClientOp::Destroy {
+                session_id: "host-1:pane-1".into(),
+            },
         })
         .unwrap(),
     ))

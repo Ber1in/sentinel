@@ -73,7 +73,8 @@ impl DaemonServer {
                         let info = accept_info.clone();
                         let manager = manager.clone();
                         tokio::spawn(async move {
-                            if let Err(error) = serve_connection(stream, token, info, manager).await {
+                            if let Err(error) = serve_connection(stream, token, info, manager).await
+                            {
                                 tracing::debug!(%error, "client connection ended");
                             }
                         });
@@ -83,7 +84,12 @@ impl DaemonServer {
             }
         });
 
-        Ok(Self { addr, token, info, task })
+        Ok(Self {
+            addr,
+            token,
+            info,
+            task,
+        })
     }
 
     pub fn url(&self) -> String {
@@ -102,18 +108,18 @@ async fn serve_connection(
     manager: Arc<Manager>,
 ) -> Result<()> {
     let ws = accept_async(stream).await.context("websocket upgrade")?;
-    let ws = match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(ws, &expected_token, info)).await
-    {
-        Ok(Ok(ws)) => ws,
-        Ok(Err(error)) => {
-            tracing::info!(%error, "handshake rejected");
-            return Ok(());
-        }
-        Err(_) => {
-            tracing::info!("handshake timed out");
-            return Ok(());
-        }
-    };
+    let ws =
+        match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(ws, &expected_token, info)).await {
+            Ok(Ok(ws)) => ws,
+            Ok(Err(error)) => {
+                tracing::info!(%error, "handshake rejected");
+                return Ok(());
+            }
+            Err(_) => {
+                tracing::info!("handshake timed out");
+                return Ok(());
+            }
+        };
 
     let (mut sink, mut incoming) = ws.split();
     let mut changes = manager.subscribe_changes();
@@ -199,8 +205,12 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
     };
 
     let result = match op {
-        ClientOp::ListSessions => OpResult::Sessions { sessions: manager.list() },
-        ClientOp::ListHosts => OpResult::Hosts { hosts: manager.hosts() },
+        ClientOp::ListSessions => OpResult::Sessions {
+            sessions: manager.list(),
+        },
+        ClientOp::ListHosts => OpResult::Hosts {
+            hosts: manager.hosts(),
+        },
         ClientOp::SetSecret { id, secret } => match manager.store_secret(&id, &secret) {
             Ok(()) => OpResult::Ok,
             Err(error) => OpResult::Error { error },
@@ -216,17 +226,19 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
                 Err(error) => OpResult::Error { error },
             }
         }
-        ClientOp::Attach { session_id } => match manager.list().iter().find(|s| s.session_id == session_id) {
-            Some(summary) => OpResult::Session {
-                numeric: manager.numeric_id(&summary.session_id).unwrap_or_default(),
-                session_id: summary.session_id.clone(),
-                provider: summary.provider,
-                recreated: false,
-            },
-            None => OpResult::Error {
-                error: ProtocolError::new(ErrorCode::NotFound, "session not found"),
-            },
-        },
+        ClientOp::Attach { session_id } => {
+            match manager.list().iter().find(|s| s.session_id == session_id) {
+                Some(summary) => OpResult::Session {
+                    numeric: manager.numeric_id(&summary.session_id).unwrap_or_default(),
+                    session_id: summary.session_id.clone(),
+                    provider: summary.provider,
+                    recreated: false,
+                },
+                None => OpResult::Error {
+                    error: ProtocolError::new(ErrorCode::NotFound, "session not found"),
+                },
+            }
+        }
         ClientOp::Detach { session_id } => {
             manager.detach(&session_id);
             OpResult::Ok
@@ -235,7 +247,11 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
             manager.destroy(&session_id);
             OpResult::Ok
         }
-        ClientOp::Resize { session_id, cols, rows } => {
+        ClientOp::Resize {
+            session_id,
+            cols,
+            rows,
+        } => {
             manager.resize(&session_id, cols, rows);
             OpResult::Ok
         }
@@ -261,7 +277,11 @@ pub async fn handshake(
 
     let accepted = match first {
         Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
-            Ok(ClientMessage::Hello { protocol_version, token, .. }) => {
+            Ok(ClientMessage::Hello {
+                protocol_version,
+                token,
+                ..
+            }) => {
                 if protocol_version != PROTOCOL_VERSION {
                     reject(&mut ws, "protocol_version", "protocol version mismatch").await?;
                     false
@@ -273,7 +293,12 @@ pub async fn handshake(
                 }
             }
             _ => {
-                reject(&mut ws, "invalid_request", "handshake must start with hello").await?;
+                reject(
+                    &mut ws,
+                    "invalid_request",
+                    "handshake must start with hello",
+                )
+                .await?;
                 false
             }
         },
@@ -287,17 +312,21 @@ pub async fn handshake(
         anyhow::bail!("handshake rejected");
     }
 
-    ws.send(Message::Text(serde_json::to_string(&ServerMessage::Hello { info })?))
-        .await?;
+    ws.send(Message::Text(serde_json::to_string(
+        &ServerMessage::Hello { info },
+    )?))
+    .await?;
     Ok(ws)
 }
 
 async fn reject(ws: &mut WebSocketStream<TcpStream>, code: &str, reason: &str) -> Result<()> {
-    ws.send(Message::Text(
-        serde_json::to_string(&ServerMessage::Event {
-            event: ServerEvent::DaemonShuttingDown { reason: format!("{code}: {reason}") },
-        })?,
-    ))
+    ws.send(Message::Text(serde_json::to_string(
+        &ServerMessage::Event {
+            event: ServerEvent::DaemonShuttingDown {
+                reason: format!("{code}: {reason}"),
+            },
+        },
+    )?))
     .await?;
     ws.send(Message::Close(Some(CloseFrame {
         code: CloseCode::Policy,
