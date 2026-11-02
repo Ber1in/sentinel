@@ -3,6 +3,7 @@
 # Requires root (user creation + /run/sshd). Safe to re-run: state lives in $ROOT.
 #
 #   ./scripts/test-sshd.sh start   # create user/keys, start sshd, print env
+#   ./scripts/test-sshd.sh drop    # kill live connections, keep the listener
 #   ./scripts/test-sshd.sh stop    # stop sshd (leaves user and files)
 #   ./scripts/test-sshd.sh clean   # stop and remove user + files
 set -euo pipefail
@@ -51,8 +52,13 @@ LogLevel ERROR
 Subsystem sftp internal-sftp
 CONF
 
-  if [ -f "$ROOT/sshd.pid" ] && kill -0 "$(cat "$ROOT/sshd.pid")" 2>/dev/null; then
-    echo "sshd already running on port $PORT"
+  # Guarantee a single listener: stale pid files and duplicate instances made the
+  # fixture unreliable.
+  pkill -f "sshd -f $ROOT/sshd_config" 2>/dev/null || true
+  rm -f "$ROOT/sshd.pid"
+  sleep 0.2
+  if false; then
+    :
   else
     "$SSHD" -f "$ROOT/sshd_config" -E "$ROOT/sshd.log"
     for _ in $(seq 1 50); do
@@ -85,11 +91,19 @@ export SSH_AUTH_SOCK=$SSH_AUTH_SOCK
 ENV
 }
 
+# Sever every live connection for the test user without touching the listener.
+drop() {
+  pkill -9 -f "sshd: $TEST_USER" 2>/dev/null || true
+  sleep 0.2
+}
+
 stop() {
   if [ -f "$ROOT/sshd.pid" ]; then
     kill "$(cat "$ROOT/sshd.pid")" 2>/dev/null || true
     rm -f "$ROOT/sshd.pid"
   fi
+  pkill -f "sshd -f $ROOT/sshd_config" 2>/dev/null || true
+  sleep 0.2
 }
 
 clean() {
@@ -100,7 +114,8 @@ clean() {
 
 case "${1:-start}" in
   start) start ;;
+  drop) drop ;;
   stop) stop ;;
   clean) clean ;;
-  *) echo "usage: $0 start|stop|clean" >&2; exit 2 ;;
+  *) echo "usage: $0 start|drop|stop|clean" >&2; exit 2 ;;
 esac

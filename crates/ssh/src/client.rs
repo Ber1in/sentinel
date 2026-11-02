@@ -109,6 +109,22 @@ impl Connection {
         Ok(channel)
     }
 
+    /// Open a PTY-backed channel and exec `command` in it. Used to attach tmux clients.
+    pub async fn open_pty_exec(
+        &self,
+        command: &str,
+        term: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<Channel<russh::client::Msg>, SshError> {
+        let channel = self.handle.channel_open_session().await?;
+        channel
+            .request_pty(true, term, cols as u32, rows as u32, 0, 0, &[])
+            .await?;
+        channel.exec(true, command).await?;
+        Ok(channel)
+    }
+
     /// Open a channel and run a one-shot command (tests, probes).
     pub async fn exec(&self, command: &str) -> Result<Channel<russh::client::Msg>, SshError> {
         let channel = self.handle.channel_open_session().await?;

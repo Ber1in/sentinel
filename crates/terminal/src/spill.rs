@@ -21,7 +21,6 @@ pub const SEGMENT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
 struct Segment {
-    seq_start: u64,
     path: PathBuf,
     size: u64,
 }
@@ -107,11 +106,7 @@ impl SpillStore {
         }
         let path = self.dir.join(format!("{seq:012}.seg"));
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
-        self.segments.push_back(Segment {
-            seq_start: seq,
-            path,
-            size: 0,
-        });
+        self.segments.push_back(Segment { path, size: 0 });
         self.current = Some(file);
         self.current_seq_start = seq;
         self.current_size = 0;

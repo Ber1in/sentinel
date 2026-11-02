@@ -296,13 +296,18 @@ name = "daemon"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "fs2",
  "futures-util",
+ "persistence",
  "protocol",
  "rand",
+ "russh",
  "serde",
  "serde_json",
+ "ssh",
  "tempfile",
+ "terminal",
  "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
