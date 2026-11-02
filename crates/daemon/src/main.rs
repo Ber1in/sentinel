@@ -100,7 +100,11 @@ async fn run_daemon() -> Result<()> {
 
     let store = match store::Store::open(&paths.state_db())? {
         store::Opened::Clean(store) => store,
-        store::Opened::Recovered { store, backup, reason } => {
+        store::Opened::Recovered {
+            store,
+            backup,
+            reason,
+        } => {
             tracing::warn!(backup = %backup.display(), %reason, "state database was corrupt; recreated");
             store
         }
@@ -128,7 +132,9 @@ fn ensure_autostart() {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
-    let Ok(executable) = std::env::current_exe() else { return };
+    let Ok(executable) = std::env::current_exe() else {
+        return;
+    };
     let command = format!("\"{}\" --supervise", executable.display());
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok(key) = hkcu.open_subkey_with_flags(
