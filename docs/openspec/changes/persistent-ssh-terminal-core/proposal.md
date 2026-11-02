@@ -16,6 +16,8 @@
 - 新增会话语义：关闭标签 = detach（远端保留），侧边栏可见并可接回；显式结束才销毁；30 天未访问提示清理
 - 新增状态持久化：SQLite 保存主机、标签、布局、会话索引；每会话滚动缓冲落盘（默认 100k 行 / 50MB 环形）；凭据存 Windows Credential Manager
 - 新增守护进程生命周期：登录自启、单实例、GUI 缺失时自动拉起、崩溃后自动重启并重连
+- 新增现代桌面界面：可本地化的简体中文/英文界面、深色与浅色主题、命令面板、状态可视化
+- 新增 Windows 交付：安装包与便携版，产物输出到指定目录
 
 ## 能力
 
@@ -26,6 +28,7 @@
 - `multi-host-workspace`：跨主机标签与分屏的数据模型、布局持久化、惰性恢复
 - `terminal-emulation`：终端渲染与输入、滚动缓冲、搜索、尺寸同步
 - `credential-and-config-storage`：凭据存储、配置读取、状态数据库
+- `desktop-interface`：界面语言、主题、工作台布局、状态可视化、字体与安装包交付
 
 ### 修改能力
 
@@ -36,4 +39,5 @@
 - 全新代码库，无既有代码受影响；本变更确立仓库结构（Rust workspace + Electron 应用 + 共享协议定义）
 - 外部依赖：远端 Linux 需 OpenSSH server 与 tmux；Windows 11 需 WebView2 以外的运行时（Electron 自带）
 - 运行要求：Windows 11 x64；远端 tmux ≥ 3.0
+- 交付：electron-builder 产出 NSIS 安装包与便携 zip，构建产物放在 `/mnt/d/Downloads`
 - 明确不在本变更内：SFTP 面板（独立 change `sftp-file-panel`）、远端 helper provider（阶段二）、端口转发、跳板机、本地 shell/WSL

@@ -173,6 +173,30 @@ exists(sessionRef) -> bool
 - GUI 开发用 WSLg 跑 Electron；打包与真机验收必须在 Windows 11 上完成。
 - 协议类型由 Rust 经 `ts-rs` 导出 TS，杜绝两侧手写漂移。
 
+### D14：界面技术栈与设计系统
+
+- **Tailwind CSS + Radix primitives + lucide 图标**：Tailwind 负责令牌与布局，Radix 提供可访问的菜单/对话框/下拉（键盘与焦点管理不自己造），lucide 提供统一线性图标。
+- **设计语言**：深色优先的"终端工作台"。左侧边栏用卡片分组（主机、最近、后台会话），标签条带主机色标与状态胶囊，分屏之间是细拖拽手柄，右下角 toast，`Ctrl+K` 命令面板。
+- **令牌**：颜色（surface/elevated/border/text/muted/accent/danger/warning/success）、圆角、间距、字号全部走 CSS 变量，深色与浅色各一套；强调色可换，不硬编码十六进制。
+- **状态可视化**：状态胶囊同时用文字与颜色（`重连中` + 琥珀色），满足色觉差异要求。
+- **字体**：Inter（界面）与 JetBrains Mono（终端）以文件形式打包进应用，通过 `@font-face` 加载，不依赖系统安装。
+- 备选：纯手写 CSS（可控但一致性差、迭代慢）、Ant Design（视觉偏后台管理系统，与终端气质不符）。
+
+### D15：本地化
+
+- `i18next` + `react-i18next`，资源文件按 `locales/en/*.json`、`locales/zh-CN/*.json` 组织，一个命名空间对应一个界面区域。
+- 首次启动读取 `navigator.language`（或主进程 `app.getLocale()`）：`zh*` → `zh-CN`，其余 → `en`。
+- 语言写入配置 `language: "auto" | "en" | "zh-CN"`；`auto` 表示跟随系统。
+- 禁止在组件中写死用户可见文案；错误提示使用错误码 + 本地化映射，不把后端英文原文直接展示。
+- 终端内容、远端输出、命令名不翻译。
+
+### D16：打包与交付
+
+- `electron-builder` 产出 NSIS 安装包（不签名）与便携 zip；输出目录配置为 `/mnt/d/Downloads`（通过 `--config.directories.output` 传入，不写死在仓库里）。
+- Linux 上交叉构建 Windows 安装包：electron-builder 自带 Linux 版 NSIS，无需 Wine；`daemon.exe` 用 mingw 交叉编译后作为 `extraResources` 打进安装包。
+- 安装包内包含：GUI、daemon、supervisor 入口（同一二进制）、内置字体、语言资源。
+- 卸载清理：自启项、`%LOCALAPPDATA%\sentinel`、`%APPDATA%\sentinel`；凭据条目需要在应用内提供"清除凭据"操作（安装器不触碰凭据管理器）。
+
 ## 数据模型
 
 ```
@@ -227,3 +251,5 @@ schema_version(version INTEGER)
 - 崩溃恢复后的标注只保留一种文案「远端进程可能已丢失」，不区分「确认丢失」与「未知」，避免要求系统判断它无法证明的事实。
 - 「全部重连」入口固定在侧边栏后台会话分组底部，并提供 `Ctrl+Shift+R` 与命令面板入口。
 - 开发与验证环境：核心 crate 在 WSL 开发并打本地 sshd+tmux；GUI 在 WSLg 冒烟、Windows 11 真机验收；`daemon.exe` 交叉编译产出。
+- 视觉默认深色优先，提供浅色；用户未指定参考产品，按 D14 的设计语言执行，后续可按反馈调整强调色与密度。
+- 界面语言只做 `en` 与 `zh-CN` 两种，资源结构允许后续追加语言包。
