@@ -7,6 +7,12 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub mod messages;
+pub mod session;
+
+pub use messages::*;
+pub use session::*;
+
 /// Bumped whenever a wire-incompatible change is made.
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -17,19 +23,6 @@ pub struct ServerInfo {
     pub protocol_version: u32,
     pub daemon_version: String,
     pub pid: u32,
-}
-
-/// Lifecycle of a single terminal session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "snake_case")]
-#[ts(export)]
-pub enum SessionState {
-    Connecting,
-    Connected,
-    Reconnecting,
-    Detached,
-    Lost,
-    Failed,
 }
 
 #[cfg(test)]
@@ -58,5 +51,12 @@ mod tests {
             serde_json::to_string(&SessionState::Reconnecting).unwrap(),
             "\"reconnecting\""
         );
+    }
+
+    #[test]
+    fn terminal_states_are_not_live() {
+        assert!(SessionState::Failed.is_terminal());
+        assert!(SessionState::Connected.is_live());
+        assert!(!SessionState::Detached.is_live());
     }
 }
