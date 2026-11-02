@@ -1,0 +1,23 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Node / Electron
+node_modules/
+.pnpm-store/
+apps/desktop/dist/
+apps/desktop/out/
+apps/desktop/release/
+*.tsbuildinfo
+
+# Build & packaging
+build/
+dist/
+*.log
+*.tmp
+.DS_Store
+
+# Local runtime artifacts
+scrollback/
+*.part

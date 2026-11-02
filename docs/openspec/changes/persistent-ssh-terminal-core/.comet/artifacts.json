@@ -1,0 +1,8 @@
+{
+  "openspec_proposal": "docs/openspec/changes/persistent-ssh-terminal-core/proposal.md",
+  "openspec_design": "docs/openspec/changes/persistent-ssh-terminal-core/design.md",
+  "openspec_tasks": "docs/openspec/changes/persistent-ssh-terminal-core/tasks.md",
+  "openspec_delta_spec": "docs/openspec/changes/persistent-ssh-terminal-core/specs/credential-and-config-storage/spec.md",
+  "handoff_context": "docs/openspec/changes/persistent-ssh-terminal-core/.comet/handoff/design-context.json",
+  "handoff_markdown": "docs/openspec/changes/persistent-ssh-terminal-core/.comet/handoff/design-context.md"
+}

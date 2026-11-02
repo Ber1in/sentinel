@@ -1,0 +1,40 @@
+{
+  "version": "comet.batch.v1",
+  "batch_id": "ssh-terminal-mvp",
+  "goal": "Windows 11 自用终端工作台：跨主机标签/分屏、持久 SSH 会话、断线重连、服务器重启后恢复布局与缓冲、SFTP 侧栏。",
+  "created_at": "2026-11-02",
+  "order": [
+    "persistent-ssh-terminal-core",
+    "sftp-file-panel"
+  ],
+  "changes": [
+    {
+      "name": "persistent-ssh-terminal-core",
+      "status": "selected",
+      "goal": "本地守护进程持有 SSH 与远端 tmux 会话，GUI 可随时关闭/崩溃并恢复；单窗口跨主机标签与分屏；断线自动重连；布局/目录/历史/滚动缓冲恢复；认证与凭据存储。",
+      "scope": "Rust 守护进程 + russh + tmux PersistenceProvider + Electron/React/xterm.js GUI + 本地 IPC 协议 + SQLite/凭据存储 + 后台会话管理（detach/清理）。",
+      "non_goals": "SFTP 面板、远端 helper provider、端口转发、跳板机、agent forwarding、OTP 自动生成、多窗口、云同步、跨会话全文搜索、AI agent 集成、本地 shell/WSL/串口、Win10 及非 Windows 客户端。",
+      "acceptance_scenarios": [
+        "两个标签分别连接两台主机并跨主机左右分屏，kill GUI 后重开，两个标签恢复且远端 top 仍在运行",
+        "断开网络 30s 后恢复，标签显示重连中并自动恢复，tmux 回放期间日志连续不丢",
+        "服务器重启后重连，布局/标签/工作目录/滚动缓冲恢复，并明确提示运行中进程已丢失",
+        "关闭标签等于 detach，侧栏后台会话可接回；显式结束会话才销毁；30 天未访问提示清理",
+        "GUI 启动时 daemon 不在则自动拉起；daemon 崩溃后自动重启并重连全部标签"
+      ]
+    },
+    {
+      "name": "sftp-file-panel",
+      "status": "open-complete",
+      "goal": "在终端窗口右侧提供可折叠 SFTP 面板：绑定当前标签主机、默认跟随终端 cwd、目录浏览、右键上传/下载、拖拽上传、传输队列。",
+      "scope": "复用 core 的 SSH 连接与 IPC 协议新增 SFTP 通道；面板 UI（面包屑、目录树、右键菜单、上传/下载对话框）；传输队列与进度；cwd 跟随开关。",
+      "non_goals": "在线编辑、双向目录同步、断点续传、传输历史、批量多选、权限以外的文件属性管理、独立 SFTP 会话（多重连）。",
+      "acceptance_scenarios": [
+        "cd 到 /var/log 后面板自动切到该目录，可切回锁定模式",
+        "右键下载文件弹出 Windows 保存对话框，完成后文件落盘且队列显示完成",
+        "从资源管理器拖拽文件到面板完成上传，队列显示进度与速度",
+        "切换标签时面板跟随该标签的主机，互不串台",
+        "断开重连后面板恢复原目录并提示可刷新"
+      ]
+    }
+  ]
+}

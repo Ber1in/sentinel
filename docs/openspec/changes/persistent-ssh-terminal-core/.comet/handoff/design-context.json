@@ -1,0 +1,20 @@
+{
+  "change": "persistent-ssh-terminal-core",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "task_hash_policy": "task-content-v1",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "5b9745fb73f725a2af63838b105de20ca670ee4197cfa6bbf9acb3c4115479ff",
+  "files": [
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/proposal.md", "sha256": "895fed8b16cacd2df7be1c3d7ba6afb439631f44799dac2ab5c31ba0d67c4885" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/design.md", "sha256": "2581fac974da041af28d30daa76529feda05eff517bb6166ffcd5e55ddfdaee1" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/tasks.md", "sha256": "bc96c8da4ce9e52c1504c18b761f5cd0783e71323e34eea59f5f3307267ebe67" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/.openspec.yaml", "sha256": "71e91d8f42848565b00ec7bb4da95cf19e2182f4adc440c230b10a0f3345023b" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/credential-and-config-storage/spec.md", "sha256": "ba9ae32d180f52f92e7c153078dee6c53c33b0e805f52c8719d6f379b4b598aa" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/multi-host-workspace/spec.md", "sha256": "6c287efd657e91608519d5142c0661fea2f6f1c895e3c32f9156bc02adaa3d70" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/ssh-connection-management/spec.md", "sha256": "320d7abf67c6eeff83cd1d4463fde960ae91db998984c148eb9088244c74e97b" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-emulation/spec.md", "sha256": "f48f1a45a1128bd6a05bcaf149517763ff8e52a9b9fa1bb6ae8963e9ac18ad3b" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md", "sha256": "4dcc6dd9d31daf941a6ebfcb6744d6169bf4342106d4daf87e2d5e61c41c484d" }
+  ]
+}
