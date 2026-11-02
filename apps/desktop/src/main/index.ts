@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -292,6 +292,11 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: false
     }
+  })
+
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
   })
 
   window.once('ready-to-show', () => window?.show())

@@ -16,7 +16,9 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@radix-ui/react-dialog": "^1.3.1",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
     "clsx": "^2.1.1",
@@ -38,7 +40,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   },
-  "description": "Sentinel \u2014 persistent SSH workspaces for Windows",
+  "description": "Sentinel — persistent SSH workspaces for Windows",
   "author": "Ber1in",
   "build": {
     "appId": "io.github.ber1in.sentinel",

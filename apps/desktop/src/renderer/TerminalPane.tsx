@@ -1,8 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { SearchAddon } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 
 /**
  * Defensive: a session must own exactly one terminal. If a duplicate pane is ever
@@ -26,6 +28,9 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
   const container = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
+  const search = useRef<SearchAddon | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     const element = container.current
@@ -63,6 +68,14 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
     term.loadAddon(fitAddon)
     term.loadAddon(new Unicode11Addon())
     term.unicode.activeVersion = '11'
+    const searchAddon = new SearchAddon()
+    term.loadAddon(searchAddon)
+    search.current = searchAddon
+    term.loadAddon(
+      new WebLinksAddon((_event, uri) => {
+        window.open(uri, '_blank')
+      })
+    )
     term.open(element)
     try {
       term.loadAddon(new WebglAddon())
@@ -95,6 +108,10 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'c') {
         const selection = term.getSelection()
         if (selection) void navigator.clipboard.writeText(selection)
+        return false
+      }
+      if (event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === 'f') {
+        setSearchOpen(true)
         return false
       }
       if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'v') {
@@ -138,10 +155,48 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
   }, [active])
 
   return (
-    <div
-      ref={container}
-      className="h-full w-full px-3 py-2"
-      style={{ display: active ? 'block' : 'none' }}
-    />
+    <div className="relative h-full w-full" style={{ display: active ? 'block' : 'none' }}>
+      {searchOpen ? (
+        <div className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-lg border border-line bg-elevated px-2 py-1 shadow-lg">
+          <input
+            autoFocus
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              search.current?.findNext(event.target.value, { incremental: true })
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.shiftKey
+                  ? search.current?.findPrevious(query)
+                  : search.current?.findNext(query)
+              }
+              if (event.key === 'Escape') setSearchOpen(false)
+            }}
+            placeholder="搜索"
+            className="w-40 bg-transparent text-[12px] outline-none"
+          />
+          <button
+            className="rounded px-1 text-[11px] text-muted hover:text-ink"
+            onClick={() => search.current?.findPrevious(query)}
+          >
+            ↑
+          </button>
+          <button
+            className="rounded px-1 text-[11px] text-muted hover:text-ink"
+            onClick={() => search.current?.findNext(query)}
+          >
+            ↓
+          </button>
+          <button
+            className="rounded px-1 text-[11px] text-muted hover:text-ink"
+            onClick={() => setSearchOpen(false)}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
+      <div ref={container} className="h-full w-full px-3 py-2" />
+    </div>
   )
 }
