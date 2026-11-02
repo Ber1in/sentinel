@@ -26,6 +26,8 @@ interface PaneState {
 interface Tab {
   id: string
   direction: SplitDirection
+  /** Pane that owns keyboard focus and is the target of "close pane". */
+  activePaneId: string
   panes: PaneState[]
 }
 
@@ -103,6 +105,10 @@ export function App() {
           id: tab.id,
           direction: (panesLayout.find((pane) => pane.tab_id === tab.id)?.direction ??
             'horizontal') as SplitDirection,
+          activePaneId:
+            panesLayout
+              .filter((pane) => pane.tab_id === tab.id)
+              .sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? 'main',
           panes: panesLayout
             .filter((pane) => pane.tab_id === tab.id)
             .sort((a, b) => a.sort_order - b.sort_order)
@@ -253,6 +259,7 @@ export function App() {
             .map((session) => ({
               id: session.session_id,
               direction: 'horizontal' as SplitDirection,
+              activePaneId: 'main',
               panes: [
                 {
                   id: 'main',
@@ -287,6 +294,7 @@ export function App() {
       addTab({
         id: session.session_id,
         direction: 'horizontal',
+        activePaneId: 'main',
         panes: [
           {
             id: 'main',
@@ -401,7 +409,12 @@ export function App() {
           state: 'connecting',
           provider: reply.provider
         }
-        addTab({ id: reply.session_id, direction: 'horizontal', panes: [pane] })
+        addTab({
+          id: reply.session_id,
+          direction: 'horizontal',
+          activePaneId: pane.id,
+          panes: [pane]
+        })
       } catch (error) {
         pushToast((error as Error).message)
       }
@@ -414,6 +427,32 @@ export function App() {
     setTabs((current) => current.filter((item) => item.id !== tab.id))
     setActiveTab((current) => (current === tab.id ? null : current))
   }, [])
+
+  /** Close one split pane; closing the last one closes the tab. */
+  const closePane = useCallback(
+    async (tab: Tab, paneId: string) => {
+      const pane = tab.panes.find((item) => item.id === paneId)
+      if (!pane) return
+      if (tab.panes.length === 1) {
+        await closeTab(tab)
+        return
+      }
+      await window.desktop.detach(pane.sessionId)
+      setTabs((current) =>
+        current.map((item) => {
+          if (item.id !== tab.id) return item
+          const panes = item.panes.filter((next) => next.id !== paneId)
+          return {
+            ...item,
+            panes,
+            activePaneId:
+              item.activePaneId === paneId ? panes[panes.length - 1]?.id ?? '' : item.activePaneId
+          }
+        })
+      )
+    },
+    [closeTab]
+  )
 
   /** Split the active tab using the first pane's host. */
   const splitTab = useCallback(
@@ -443,6 +482,7 @@ export function App() {
               ? {
                   ...item,
                   direction,
+                  activePaneId: paneId,
                   panes: [
                     ...item.panes.map((pane) => ({ ...pane, ratio: item.panes.length })),
                     {
@@ -682,13 +722,36 @@ export function App() {
                       )
                     }
                     renderPane={({ payload }) => (
-                      <TerminalPane
-                        sessionId={payload.sessionId}
-                        numeric={payload.numeric}
-                        active={activeTab === tab.id}
-                        onRegister={register}
-                        onReady={() => void window.desktop.resync(payload.sessionId)}
-                      />
+                      <div
+                        className="group/pane relative h-full w-full"
+                        onMouseDown={() =>
+                          setTabs((current) =>
+                            current.map((item) =>
+                              item.id === tab.id ? { ...item, activePaneId: payload.id } : item
+                            )
+                          )
+                        }
+                      >
+                        {tab.panes.length > 1 ? (
+                          <button
+                            className="absolute right-2 top-1.5 z-10 grid h-5 w-5 place-items-center rounded bg-elevated/80 text-muted opacity-0 transition hover:text-danger group-hover/pane:opacity-100"
+                            title={t('action.closePane')}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              void closePane(tab, payload.id)
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        ) : null}
+                        <TerminalPane
+                          sessionId={payload.sessionId}
+                          numeric={payload.numeric}
+                          active={activeTab === tab.id}
+                          onRegister={register}
+                          onReady={() => void window.desktop.resync(payload.sessionId)}
+                        />
+                      </div>
                     )}
                   />
                 </div>
@@ -889,6 +952,7 @@ function QuickConnect(props: {
       onDone({
         id: reply.session_id,
         direction: 'horizontal',
+        activePaneId: 'main',
         panes: [
           {
             id: 'main',
