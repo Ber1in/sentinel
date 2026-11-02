@@ -6,4 +6,4 @@ import type { ServerInfo } from "./ServerInfo";
 /**
  * Message sent by the daemon.
  */
-export type ServerMessage = { "type": "hello", info: ServerInfo, } | { "type": "reply", id: bigint, result: OpResult, } | { "type": "event", event: ServerEvent, };
+export type ServerMessage = { "type": "hello", info: ServerInfo, } | { "type": "reply", id: number, result: OpResult, } | { "type": "event", event: ServerEvent, };

@@ -130,3 +130,50 @@ async fn daemon_file_is_written_with_the_live_port() {
     assert_eq!(published.pid, std::process::id());
     assert_eq!(published.protocol_version, PROTOCOL_VERSION);
 }
+
+#[tokio::test]
+async fn list_sessions_replies_with_an_empty_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = DaemonPaths::from_root(dir.path());
+    let server = DaemonServer::start(&paths).await.unwrap();
+
+    let mut ws = client(&server.url()).await;
+    ws.send(Message::Text(
+        serde_json::to_string(&ClientMessage::Hello {
+            protocol_version: PROTOCOL_VERSION,
+            token: server.token.clone(),
+            client_version: "test".into(),
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+    let _hello = ws.next().await.unwrap().unwrap();
+
+    ws.send(Message::Text(
+        serde_json::to_string(&ClientMessage::Request {
+            id: 7,
+            op: protocol::ClientOp::ListSessions,
+        })
+        .unwrap(),
+    ))
+    .await
+    .unwrap();
+
+    let reply = tokio::time::timeout(Duration::from_secs(2), ws.next())
+        .await
+        .expect("reply in time")
+        .unwrap()
+        .unwrap();
+    let Message::Text(text) = reply else { panic!("expected text") };
+    match serde_json::from_str::<ServerMessage>(&text).unwrap() {
+        ServerMessage::Reply { id, result } => {
+            assert_eq!(id, 7);
+            match result {
+                protocol::OpResult::Sessions { sessions } => assert!(sessions.is_empty()),
+                other => panic!("unexpected result {other:?}"),
+            }
+        }
+        other => panic!("unexpected message {other:?}"),
+    }
+}

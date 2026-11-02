@@ -4,4 +4,4 @@ import type { ClientOp } from "./ClientOp";
 /**
  * Message sent by the GUI.
  */
-export type ClientMessage = { "type": "hello", protocol_version: number, token: string, client_version: string, } | { "type": "request", id: bigint, op: ClientOp, };
+export type ClientMessage = { "type": "hello", protocol_version: number, token: string, client_version: string, } | { "type": "request", id: number, op: ClientOp, };

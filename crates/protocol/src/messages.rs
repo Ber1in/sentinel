@@ -73,7 +73,7 @@ pub enum ClientMessage {
         client_version: String,
     },
     Request {
-        id: u64,
+        id: u32,
         op: ClientOp,
     },
 }
@@ -119,7 +119,7 @@ pub enum ClientOp {
 #[ts(export)]
 pub enum ServerMessage {
     Hello { info: crate::ServerInfo },
-    Reply { id: u64, result: OpResult },
+    Reply { id: u32, result: OpResult },
     Event { event: ServerEvent },
 }
 
