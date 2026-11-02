@@ -1,7 +1,7 @@
 ---
 change: persistent-ssh-terminal-core
 design-doc: docs/openspec/changes/persistent-ssh-terminal-core/design.md
-base-ref: pending-repo-init
+base-ref: 76e1a3b
 ---
 
 # 实施计划：持久化跨主机 SSH 终端核心

@@ -2,7 +2,7 @@
 
 ## 1. 仓库与构建基线
 
-- [ ] 1.1 `git init` 并提交 `.gitignore`（Rust `target/`、Node `node_modules/`、`dist/`、构建产物），验证：`git status` 干净且 `git log` 有一条初始提交 <!-- comet-task:a2769419-e046-4971-b233-8401849c78de -->
+- [x] 1.1 `git init` 并提交 `.gitignore`（Rust `target/`、Node `node_modules/`、`dist/`、构建产物），验证：`git status` 干净且 `git log` 有一条初始提交 <!-- comet-task:a2769419-e046-4971-b233-8401849c78de -->
 - [ ] 1.2 建立 Cargo workspace 与 `crates/{protocol,daemon,ssh,persistence,terminal,store}` 骨架，每个 crate 一个最小可编译入口，验证：`cargo check --workspace` 通过 <!-- comet-task:3d42d8ad-ede0-4d39-b428-8cd87a76266a -->
 - [ ] 1.3 建立 `apps/desktop`（Electron + React + Vite + TypeScript）骨架，能启动空白窗口，验证：`pnpm build` 与 `pnpm dev` 均可启动 <!-- comet-task:4c5c0959-86db-462e-9a43-faa0073bdfd8 -->
 - [ ] 1.4 建立协议类型导出管线：`crates/protocol` 为单一事实来源，构建期生成 TS 类型文件，验证：新增一个消息类型后重新生成，TS 侧出现对应定义且类型检查通过 <!-- comet-task:555bea40-5d6d-4a7f-8fa2-174cae873252 -->
