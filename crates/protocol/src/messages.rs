@@ -63,7 +63,7 @@ pub fn decode_data_frame(frame: &[u8]) -> Option<(FrameKind, u32, u64, &[u8])> {
 }
 
 /// Message sent by the GUI.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ClientMessage {
@@ -79,7 +79,7 @@ pub enum ClientMessage {
 }
 
 /// Operations the GUI can request from the daemon.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "op", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ClientOp {
@@ -146,7 +146,7 @@ pub enum ClientOp {
 }
 
 /// Message sent by the daemon.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ServerMessage {
@@ -156,7 +156,7 @@ pub enum ServerMessage {
 }
 
 /// Result payload of one [`ClientOp`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "result", rename_all = "snake_case")]
 #[ts(export)]
 pub enum OpResult {

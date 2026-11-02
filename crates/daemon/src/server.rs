@@ -214,6 +214,14 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
         ClientOp::ListHosts => OpResult::Hosts {
             hosts: manager.hosts(),
         },
+        ClientOp::SaveLayout { tabs, panes } => match manager.save_layout(&tabs, &panes) {
+            Ok(()) => OpResult::Ok,
+            Err(error) => OpResult::Error { error },
+        },
+        ClientOp::LoadLayout => match manager.load_layout() {
+            Ok((tabs, panes)) => OpResult::Layout { tabs, panes },
+            Err(error) => OpResult::Error { error },
+        },
         ClientOp::UpdateHost {
             host,
             name,
