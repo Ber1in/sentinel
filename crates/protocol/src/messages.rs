@@ -110,6 +110,12 @@ pub enum ClientOp {
         host_id: String,
         new_id: String,
     },
+    /// Replace the persisted tab/split layout.
+    SaveLayout {
+        tabs: Vec<TabLayout>,
+        panes: Vec<PaneLayout>,
+    },
+    LoadLayout,
     CreateSession {
         host: HostSpec,
         pane_id: String,
@@ -161,6 +167,10 @@ pub enum OpResult {
     Hosts {
         hosts: Vec<HostSummary>,
     },
+    Layout {
+        tabs: Vec<TabLayout>,
+        panes: Vec<PaneLayout>,
+    },
     Session {
         session_id: String,
         /// Numeric id used in binary data frames.
@@ -186,6 +196,30 @@ pub struct HostSummary {
     pub auth: AuthMethod,
     pub group_name: Option<String>,
     pub last_used_at: i64,
+}
+
+/// One tab in the persisted layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TabLayout {
+    pub id: String,
+    pub title: String,
+    pub sort_order: i64,
+}
+
+/// One pane in the persisted split tree.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PaneLayout {
+    pub id: String,
+    pub tab_id: String,
+    pub parent_id: Option<String>,
+    /// `horizontal` or `vertical`.
+    pub direction: Option<String>,
+    pub ratio: f64,
+    pub host_id: Option<String>,
+    pub session_id: Option<String>,
+    pub sort_order: i64,
 }
 
 /// Structured, machine-readable error.

@@ -245,6 +245,81 @@ impl Manager {
             .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
     }
 
+    pub fn save_layout(
+        &self,
+        tabs: &[protocol::TabLayout],
+        panes: &[protocol::PaneLayout],
+    ) -> Result<(), ProtocolError> {
+        let tabs: Vec<store::TabRecord> = tabs
+            .iter()
+            .map(|tab| store::TabRecord {
+                id: tab.id.clone(),
+                title: tab.title.clone(),
+                sort_order: tab.sort_order,
+            })
+            .collect();
+        let panes: Vec<store::PaneRecord> = panes
+            .iter()
+            .map(|pane| store::PaneRecord {
+                id: pane.id.clone(),
+                tab_id: pane.tab_id.clone(),
+                parent_id: pane.parent_id.clone(),
+                direction: pane.direction.as_deref().map(|value| {
+                    if value == "vertical" {
+                        store::SplitDirection::Vertical
+                    } else {
+                        store::SplitDirection::Horizontal
+                    }
+                }),
+                ratio: pane.ratio,
+                host_id: pane.host_id.clone(),
+                session_id: pane.session_id.clone(),
+                sort_order: pane.sort_order,
+            })
+            .collect();
+        self.store
+            .lock()
+            .unwrap()
+            .save_layout(&tabs, &panes)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
+    pub fn load_layout(
+        &self,
+    ) -> Result<(Vec<protocol::TabLayout>, Vec<protocol::PaneLayout>), ProtocolError> {
+        let (tabs, panes) = self
+            .store
+            .lock()
+            .unwrap()
+            .load_layout()
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))?;
+        Ok((
+            tabs.into_iter()
+                .map(|tab| protocol::TabLayout {
+                    id: tab.id,
+                    title: tab.title,
+                    sort_order: tab.sort_order,
+                })
+                .collect(),
+            panes
+                .into_iter()
+                .map(|pane| protocol::PaneLayout {
+                    id: pane.id,
+                    tab_id: pane.tab_id,
+                    parent_id: pane.parent_id,
+                    direction: pane.direction.map(|direction| match direction {
+                        store::SplitDirection::Horizontal => "horizontal".to_string(),
+                        store::SplitDirection::Vertical => "vertical".to_string(),
+                    }),
+                    ratio: pane.ratio,
+                    host_id: pane.host_id,
+                    session_id: pane.session_id,
+                    sort_order: pane.sort_order,
+                })
+                .collect(),
+        ))
+    }
+
     pub fn hosts(&self) -> Vec<protocol::HostSummary> {
         self.store
             .lock()
@@ -689,6 +764,58 @@ mod tests {
             manager.secrets.get("h2:password").unwrap().as_deref(),
             Some("hunter2")
         );
+    }
+
+    #[test]
+    fn layout_roundtrips_through_the_manager() {
+        let manager = manager();
+        let tabs = vec![protocol::TabLayout {
+            id: "t1".into(),
+            title: "prod".into(),
+            sort_order: 0,
+        }];
+        let panes = vec![protocol::PaneLayout {
+            id: "p1".into(),
+            tab_id: "t1".into(),
+            parent_id: None,
+            direction: Some("vertical".into()),
+            ratio: 0.62,
+            host_id: Some("h1".into()),
+            session_id: Some("h1:main".into()),
+            sort_order: 0,
+        }];
+        manager.save_layout(&tabs, &panes).unwrap();
+        let (loaded_tabs, loaded_panes) = manager.load_layout().unwrap();
+        assert_eq!(loaded_tabs, tabs);
+        assert_eq!(loaded_panes, panes);
+    }
+
+    #[test]
+    fn saving_a_layout_replaces_the_previous_one() {
+        let manager = manager();
+        manager
+            .save_layout(
+                &[protocol::TabLayout {
+                    id: "a".into(),
+                    title: "a".into(),
+                    sort_order: 0,
+                }],
+                &[],
+            )
+            .unwrap();
+        manager
+            .save_layout(
+                &[protocol::TabLayout {
+                    id: "b".into(),
+                    title: "b".into(),
+                    sort_order: 0,
+                }],
+                &[],
+            )
+            .unwrap();
+        let (tabs, _) = manager.load_layout().unwrap();
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].id, "b");
     }
 
     #[test]
