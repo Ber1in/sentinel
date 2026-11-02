@@ -299,6 +299,7 @@ dependencies = [
  "async-trait",
  "fs2",
  "futures-util",
+ "keyring",
  "persistence",
  "protocol",
  "rand",
@@ -718,6 +719,16 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "log",
+ "zeroize",
 ]
 
 [[package]]
@@ -1578,6 +1589,7 @@ version = "0.1.0"
 dependencies = [
  "rusqlite",
  "serde",
+ "tempfile",
  "thiserror 2.0.21",
  "uuid",
 ]
