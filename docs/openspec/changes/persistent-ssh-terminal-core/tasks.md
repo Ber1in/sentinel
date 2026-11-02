@@ -15,7 +15,7 @@
 - [x] 2.2 实现守护进程单实例互斥 + loopback WebSocket 监听 + 一次性 token 文件（限制 ACL），验证：第二个实例启动被拒绝且退出码非零；无 token 的连接被断开 <!-- comet-task:ad972c26-962a-42f8-b439-852e98c8d02d -->
 - [x] 2.3 Electron main 作为唯一 broker 连接 daemon，renderer 经 preload 暴露的最小 API 通讯，验证：跨端 ping/echo 与一次会话列表拉取成功 <!-- comet-task:07f06a47-74b5-4fd6-b423-fe3c175f1d68 -->
 - [x] 2.4 实现协议版本协商：版本不兼容时拒绝连接并给出可读提示，验证：人为降低客户端版本时被拒且提示包含双方版本 <!-- comet-task:55c7bcb3-c663-41d8-a418-c3c215f26e82 -->
-- [ ] 2.5 在 `docs/protocol.md` 记录消息表与帧格式，验证：文档中的示例帧能被单测解析 <!-- comet-task:96233eb7-f593-4e0e-a076-656272e421eb -->
+- [x] 2.5 在 `docs/protocol.md` 记录消息表与帧格式，验证：文档中的示例帧能被单测解析 <!-- comet-task:96233eb7-f593-4e0e-a076-656272e421eb -->
 
 ## 3. SSH 连接层
 

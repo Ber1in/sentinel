@@ -165,7 +165,9 @@ async fn list_sessions_replies_with_an_empty_list() {
         .expect("reply in time")
         .unwrap()
         .unwrap();
-    let Message::Text(text) = reply else { panic!("expected text") };
+    let Message::Text(text) = reply else {
+        panic!("expected text")
+    };
     match serde_json::from_str::<ServerMessage>(&text).unwrap() {
         ServerMessage::Reply { id, result } => {
             assert_eq!(id, 7);

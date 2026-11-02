@@ -121,7 +121,10 @@ async fn serve_connection(
             Message::Ping(payload) => ws.send(Message::Pong(payload)).await?,
             Message::Text(text) => {
                 let reply = match serde_json::from_str::<ClientMessage>(&text) {
-                    Ok(ClientMessage::Request { id, op }) => ServerMessage::Reply { id, result: handle_op(op) },
+                    Ok(ClientMessage::Request { id, op }) => ServerMessage::Reply {
+                        id,
+                        result: handle_op(op),
+                    },
                     Ok(ClientMessage::Hello { .. }) => ServerMessage::Reply {
                         id: 0,
                         result: protocol::OpResult::Error {
@@ -142,7 +145,8 @@ async fn serve_connection(
                         },
                     },
                 };
-                ws.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                ws.send(Message::Text(serde_json::to_string(&reply)?))
+                    .await?;
             }
             _ => {}
         }
@@ -227,7 +231,9 @@ async fn reject(ws: &mut WebSocketStream<TcpStream>, code: &str, reason: &str) -
 fn handle_op(op: protocol::ClientOp) -> protocol::OpResult {
     use protocol::{ClientOp, ErrorCode, OpResult, ProtocolError};
     match op {
-        ClientOp::ListSessions => OpResult::Sessions { sessions: Vec::new() },
+        ClientOp::ListSessions => OpResult::Sessions {
+            sessions: Vec::new(),
+        },
         ClientOp::RestartDaemon => OpResult::Ok,
         other => OpResult::Error {
             error: ProtocolError::with_detail(
