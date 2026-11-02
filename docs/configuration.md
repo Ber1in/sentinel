@@ -1,8 +1,8 @@
 # 配置
 
-配置是 `%APPDATA%\sshTerminal\config.json` 下的普通 JSON，可以手工编辑，下次启动生效。文件不存在时使用默认值；字段缺失时按字段取默认值；未知字段被忽略，方便旧版本读取新版本写出的文件。
+配置是 `%APPDATA%\sentinel\config.json` 下的普通 JSON，可以手工编辑，下次启动生效。文件不存在时使用默认值；字段缺失时按字段取默认值；未知字段被忽略，方便旧版本读取新版本写出的文件。
 
-Linux/WSL 开发环境使用 `$XDG_CONFIG_HOME/sshTerminal/config.json`（默认 `~/.config/sshTerminal/config.json`）；设置 `SSHTERMINAL_CONFIG_DIR` 可覆盖整个目录，测试用它隔离。
+Linux/WSL 开发环境使用 `$XDG_CONFIG_HOME/sentinel/config.json`（默认 `~/.config/sentinel/config.json`）；设置 `SENTINEL_CONFIG_DIR` 可覆盖整个目录，测试用它隔离。
 
 ## 默认值
 

@@ -1,7 +1,7 @@
 //! tmux-backed persistence.
 //!
 //! Design choices (see `design.md` D5):
-//! - a dedicated server socket (`-L sshterminal`) so the user's own tmux server and
+//! - a dedicated server socket (`-L sentinel`) so the user's own tmux server and
 //!   configuration never interfere with ours;
 //! - an injected config file (`-f`) disabling the status bar and mouse handling;
 //! - deterministic session names derived from host + pane.
@@ -28,12 +28,12 @@ pub struct TmuxOptions {
 impl Default for TmuxOptions {
     fn default() -> Self {
         Self {
-            socket: "sshterminal".into(),
+            socket: "sentinel".into(),
             history_limit: 100_000,
             status: false,
             mouse: false,
             default_terminal: "tmux-256color".into(),
-            config_path: "~/.cache/sshterminal/tmux.conf".into(),
+            config_path: "~/.cache/sentinel/tmux.conf".into(),
         }
     }
 }
@@ -287,7 +287,7 @@ mod tests {
         let command = provider().attach_command("st_h_p", Some("/var/log"));
         assert!(command.contains("new-session -A"));
         assert!(command.contains("-c /var/log"));
-        assert!(command.contains("-L sshterminal"));
+        assert!(command.contains("-L sentinel"));
         assert!(command.contains("-f"));
     }
 

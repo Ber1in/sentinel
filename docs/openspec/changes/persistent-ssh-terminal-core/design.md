@@ -70,7 +70,7 @@ canonical_spec: openspec
 
 ### D2：IPC = loopback WebSocket + 一次性 token
 
-- daemon 监听 `127.0.0.1:0`，把 `{pid, port, token, protocolVersion, startedAt}` 写入 `%LOCALAPPDATA%\sshTerminal\daemon.json`，文件 ACL 仅当前用户可读。
+- daemon 监听 `127.0.0.1:0`，把 `{pid, port, token, protocolVersion, startedAt}` 写入 `%LOCALAPPDATA%\sentinel\daemon.json`，文件 ACL 仅当前用户可读。
 - 连接握手必须带 token，缺失或错误立即断开；不监听非 loopback 地址。
 - 选择理由：Electron 与 Rust 都是一等公民，二进制帧与多路复用直接可用，调试成本低。
 - 备选：命名管道（更“Windows 原生”、不出现在 netstat 中，留给后续加固）、stdin/stdout（无法支持多 GUI 实例，排除）。
@@ -136,7 +136,7 @@ exists(sessionRef) -> bool
 
 ### D8：滚动缓冲与落盘
 
-- 内存环形 100k 行；按 seq 分段落盘到 `%LOCALAPPDATA%\sshTerminal\scrollback\<sessionId>\`。
+- 内存环形 100k 行；按 seq 分段落盘到 `%LOCALAPPDATA%\sentinel\scrollback\<sessionId>\`。
 - 每段约 1MB；每 256 行记录一次 `(seq → 文件偏移)` 检查点，5 秒或 1MB 增量持久化索引，支持任意历史位置回读。
 - 总量上限 50MB/会话，超出裁剪最旧段；会话销毁删除整个目录；detach 时继续写入。
 - 磁盘写入失败（满/只读）时停止落盘、保留内存缓冲并在 UI 警告，不静默降级。
@@ -152,7 +152,7 @@ exists(sessionRef) -> bool
 - `rusqlite`（bundled，WAL）存 host/tab/pane/session；启动时按 `schema_version` 迁移，不可解析时备份原文件后重建。
 - 写操作串行化到单个 store task，避免多任务争锁。
 - 密码 / passphrase / 粘贴私钥 → Windows Credential Manager（`keyring`），配置只存引用键；日志出口统一脱敏。
-- 配置为 `%APPDATA%\sshTerminal\config.json`，含字体、快捷键、缓冲上限、keepalive、tmux 选项、传输并发等，启动时 schema 校验。
+- 配置为 `%APPDATA%\sentinel\config.json`，含字体、快捷键、缓冲上限、keepalive、tmux 选项、传输并发等，启动时 schema 校验。
 
 ### D11：GUI 运行时结构
 

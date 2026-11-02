@@ -11,10 +11,10 @@ pub struct DaemonPaths {
 }
 
 impl DaemonPaths {
-    /// Use `SSHTERMINAL_DATA_DIR` when set (tests, portable installs), otherwise the
+    /// Use `SENTINEL_DATA_DIR` when set (tests, portable installs), otherwise the
     /// platform's per-user data directory.
     pub fn resolve() -> Result<Self> {
-        let root = match std::env::var_os("SSHTERMINAL_DATA_DIR") {
+        let root = match std::env::var_os("SENTINEL_DATA_DIR") {
             Some(value) if !value.is_empty() => PathBuf::from(value),
             _ => platform_data_dir()?,
         };
@@ -64,15 +64,15 @@ fn platform_data_dir() -> Result<PathBuf> {
     #[cfg(windows)]
     {
         let base = std::env::var_os("LOCALAPPDATA").context("LOCALAPPDATA is not set")?;
-        Ok(PathBuf::from(base).join("sshTerminal"))
+        Ok(PathBuf::from(base).join("sentinel"))
     }
     #[cfg(not(windows))]
     {
         if let Some(base) = std::env::var_os("XDG_DATA_HOME") {
-            return Ok(PathBuf::from(base).join("sshTerminal"));
+            return Ok(PathBuf::from(base).join("sentinel"));
         }
         let home = std::env::var_os("HOME").context("HOME is not set")?;
-        Ok(PathBuf::from(home).join(".local/share/sshTerminal"))
+        Ok(PathBuf::from(home).join(".local/share/sentinel"))
     }
 }
 

@@ -18,11 +18,11 @@
 ## tmux 实现
 
 ```text
-options: socket=sshterminal history-limit=100000 status=off mouse=off default-terminal=tmux-256color destroy-unattached=off
+options: socket=sentinel history-limit=100000 status=off mouse=off default-terminal=tmux-256color destroy-unattached=off
 ```
 
-- **专用 socket**（`-L sshterminal`）：不与用户自己的 tmux server 混在一起，行为可预测。需要手工接入时用 `tmux -L sshterminal attach -t <name>`。
-- **注入配置**（`-f ~/.cache/sshterminal/tmux.conf`）：`status off` 避免与我们的 UI 重复，`mouse off` 让鼠标事件透传给应用，`history-limit 100000` 与本地缓冲上限对齐，`destroy-unattached off` 保证 detach 后会话不被回收。绝不读取用户的 `~/.tmux.conf`。
+- **专用 socket**（`-L sentinel`）：不与用户自己的 tmux server 混在一起，行为可预测。需要手工接入时用 `tmux -L sentinel attach -t <name>`。
+- **注入配置**（`-f ~/.cache/sentinel/tmux.conf`）：`status off` 避免与我们的 UI 重复，`mouse off` 让鼠标事件透传给应用，`history-limit 100000` 与本地缓冲上限对齐，`destroy-unattached off` 保证 detach 后会话不被回收。绝不读取用户的 `~/.tmux.conf`。
 - **会话名**：`st_<hostId>_<paneId>`，非 `[A-Za-z0-9_-]` 字符折叠为 `-`。
 - **创建**：先 `has-session` 探测，存在则 `Attached`；不存在则 `new-session -d` 创建并返回 `Recreated`。只有 `Recreated` 会触发"远端进程可能已丢失"的提示。
 - **接回**：`new-session -A`，一条命令同时覆盖"已存在"和"刚被清理"两种情况。

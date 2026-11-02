@@ -59,7 +59,7 @@ function createWindow(): BrowserWindow {
     width: 1200,
     height: 780,
     show: false,
-    title: 'sshTerminal',
+    title: 'Sentinel',
     backgroundColor: '#111318',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),

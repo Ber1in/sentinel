@@ -172,15 +172,15 @@ impl Config {
     }
 }
 
-/// `<config dir>/sshTerminal/config.json`, honouring `SSHTERMINAL_CONFIG_DIR` for tests.
+/// `<config dir>/sentinel/config.json`, honouring `SENTINEL_CONFIG_DIR` for tests.
 pub fn config_path() -> PathBuf {
-    if let Some(dir) = std::env::var_os("SSHTERMINAL_CONFIG_DIR") {
+    if let Some(dir) = std::env::var_os("SENTINEL_CONFIG_DIR") {
         return PathBuf::from(dir).join("config.json");
     }
     #[cfg(windows)]
     {
         let base = std::env::var_os("APPDATA").unwrap_or_default();
-        PathBuf::from(base).join("sshTerminal").join("config.json")
+        PathBuf::from(base).join("sentinel").join("config.json")
     }
     #[cfg(not(windows))]
     {
@@ -189,7 +189,7 @@ pub fn config_path() -> PathBuf {
             .unwrap_or_else(|| {
                 PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config")
             });
-        base.join("sshTerminal").join("config.json")
+        base.join("sentinel").join("config.json")
     }
 }
 

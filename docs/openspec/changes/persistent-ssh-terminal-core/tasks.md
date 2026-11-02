@@ -49,12 +49,12 @@
 
 ## 7. 状态存储与凭据
 
-- [ ] 7.1 实现 SQLite schema（host/tab/pane/session）与版本化迁移，验证：迁移单测可从空库升级到当前版本 <!-- comet-task:da3d8efb-3e41-4a00-b7fc-4a811809c640 -->
-- [ ] 7.2 实现主机、标签、分屏树、会话的仓储与事务写入，验证：写入过程中被杀后重开，数据为上一次完整版本 <!-- comet-task:ce200004-2381-442e-8e47-fc89574973f8 -->
-- [ ] 7.3 实现 Windows Credential Manager 存取（密码、passphrase、粘贴私钥），验证：可读写；配置文件与日志扫描不到明文 <!-- comet-task:2949f3b2-bcf1-49be-b650-bf8f976247cd -->
-- [ ] 7.4 实现配置 JSON 读取与 schema 校验（字体、快捷键、缓冲上限、tmux 选项、keepalive），验证：手改字体与快捷键后重启生效，非法字段给出可读错误 <!-- comet-task:63252ee9-19ce-4901-9fd1-81dbc2c758c9 -->
-- [ ] 7.5 实现损坏检测与「备份后重建」流程，验证：截断状态库后启动给出提示，确认后生成新库且原文件被保留为备份 <!-- comet-task:4333e0a3-e540-4508-8e60-d894d8b440d5 -->
-- [ ] 7.6 在 `docs/configuration.md` 记录全部配置字段与默认值，验证：文档字段与配置 schema 单测一致 <!-- comet-task:34cc9885-8669-4912-ad36-e6c9d3ccd5f4 -->
+- [x] 7.1 实现 SQLite schema（host/tab/pane/session）与版本化迁移，验证：迁移单测可从空库升级到当前版本 <!-- comet-task:da3d8efb-3e41-4a00-b7fc-4a811809c640 -->
+- [x] 7.2 实现主机、标签、分屏树、会话的仓储与事务写入，验证：写入过程中被杀后重开，数据为上一次完整版本 <!-- comet-task:ce200004-2381-442e-8e47-fc89574973f8 -->
+- [x] 7.3 实现 Windows Credential Manager 存取（密码、passphrase、粘贴私钥），验证：可读写；配置文件与日志扫描不到明文 <!-- comet-task:2949f3b2-bcf1-49be-b650-bf8f976247cd -->
+- [x] 7.4 实现配置 JSON 读取与 schema 校验（字体、快捷键、缓冲上限、tmux 选项、keepalive），验证：手改字体与快捷键后重启生效，非法字段给出可读错误 <!-- comet-task:63252ee9-19ce-4901-9fd1-81dbc2c758c9 -->
+- [x] 7.5 实现损坏检测与「备份后重建」流程，验证：截断状态库后启动给出提示，确认后生成新库且原文件被保留为备份 <!-- comet-task:4333e0a3-e540-4508-8e60-d894d8b440d5 -->
+- [x] 7.6 在 `docs/configuration.md` 记录全部配置字段与默认值，验证：文档字段与配置 schema 单测一致 <!-- comet-task:34cc9885-8669-4912-ad36-e6c9d3ccd5f4 -->
 
 ## 8. GUI：会话与布局
 

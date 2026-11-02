@@ -1,4 +1,4 @@
-# sshTerminal
+# Sentinel
 
 一个 Windows 11 自用的 SSH 终端工作台。它要解决三件事：
 

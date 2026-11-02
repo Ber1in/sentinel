@@ -19,13 +19,13 @@ interface DaemonFile {
 }
 
 export function daemonDataDir(): string {
-  if (process.env.SSHTERMINAL_DATA_DIR) return process.env.SSHTERMINAL_DATA_DIR
+  if (process.env.SENTINEL_DATA_DIR) return process.env.SENTINEL_DATA_DIR
   if (process.platform === 'win32') {
     const base = process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
-    return join(base, 'sshTerminal')
+    return join(base, 'sentinel')
   }
   const base = process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share')
-  return join(base, 'sshTerminal')
+  return join(base, 'sentinel')
 }
 
 export class ProtocolMismatchError extends Error {

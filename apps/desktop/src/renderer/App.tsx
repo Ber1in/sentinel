@@ -37,7 +37,7 @@ export function App() {
 
   return (
     <main style={{ fontFamily: 'system-ui, sans-serif', color: '#d7dae0', background: '#111318', minHeight: '100vh', padding: 24 }}>
-      <h1 style={{ fontSize: 20, marginBottom: 4 }}>sshTerminal</h1>
+      <h1 style={{ fontSize: 20, marginBottom: 4 }}>Sentinel</h1>
       <p style={{ color: '#8b93a1', marginTop: 0 }}>守护进程与桌面壳已连通。</p>
 
       <section style={{ marginTop: 24 }}>
