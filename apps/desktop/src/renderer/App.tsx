@@ -178,7 +178,9 @@ export function App() {
           state: 'connecting',
           provider: reply.provider
         }
-        setTabs((current) => [...current, tab])
+        setTabs((current) =>
+          current.some((item) => item.sessionId === tab.sessionId) ? current : [...current, tab]
+        )
         setActiveTab(tab.id)
       } catch (error) {
         pushToast((error as Error).message)
@@ -349,7 +351,9 @@ export function App() {
         t={t}
         hosts={hosts}
         onDone={(tab) => {
-          setTabs((current) => [...current, tab])
+          setTabs((current) =>
+            current.some((item) => item.sessionId === tab.sessionId) ? current : [...current, tab]
+          )
           setActiveTab(tab.id)
           void refreshHosts()
         }}
@@ -474,6 +478,7 @@ function QuickConnect(props: {
   const [user, setUser] = useState('root')
   const [auth, setAuth] = useState<AuthOption>('password')
   const [password, setPassword] = useState('')
+  const [reveal, setReveal] = useState(false)
   const [keyPath, setKeyPath] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -550,7 +555,22 @@ function QuickConnect(props: {
             </Field>
             {auth === 'password' ? (
               <Field label={t('connect.password')}>
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="input" />
+                <div className="relative">
+                  <input
+                    type={reveal ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    className="input pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setReveal((current) => !current)}
+                    title={reveal ? t('action.hide') : t('action.show')}
+                    className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-muted transition hover:text-ink"
+                  >
+                    {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </Field>
             ) : null}
             {auth === 'key' ? (

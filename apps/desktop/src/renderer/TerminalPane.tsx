@@ -69,7 +69,12 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
     }
 
     term.onData((data) => {
-      void window.desktop.sendInput(sessionId, new TextEncoder().encode(data))
+      // xterm answers terminal capability queries (DA1/DA2). If those answers arrive
+      // before tmux has taken over the tty they get echoed by the shell as
+      // `0;276;0c…` junk. tmux falls back to sane defaults without them.
+      const cleaned = data.replace(/\x1b\[[?>][0-9;]*c/g, '')
+      if (!cleaned) return
+      void window.desktop.sendInput(sessionId, new TextEncoder().encode(cleaned))
     })
 
     // Windows Terminal style copy/paste. xterm already wraps pasted text in bracketed

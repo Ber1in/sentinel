@@ -583,6 +583,12 @@ fn decode_auth(raw: &str) -> AuthMethod {
             credential_id: (!credential.is_empty()).then(|| credential.to_string()),
         };
     }
+    // Rows written before auth descriptors were encoded stored a bare credential id.
+    if raw.ends_with(":password") && raw.len() > ":password".len() {
+        return AuthMethod::Password {
+            credential_id: raw.to_string(),
+        };
+    }
     if let Some(rest) = raw.strip_prefix("kbd:") {
         return AuthMethod::KeyboardInteractive {
             credential_id: (!rest.is_empty()).then(|| rest.to_string()),
