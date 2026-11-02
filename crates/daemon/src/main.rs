@@ -1,3 +1,6 @@
 fn main() {
-    println!("sshTerminal daemon skeleton (protocol v{})", protocol::PROTOCOL_VERSION);
+    println!(
+        "sshTerminal daemon skeleton (protocol v{})",
+        protocol::PROTOCOL_VERSION
+    );
 }
