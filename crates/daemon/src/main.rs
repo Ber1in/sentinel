@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use daemon::config::{config_path, Config};
+#[cfg(windows)]
+use daemon::credentials::KeyringStore;
 use daemon::credentials::{MemoryStore, SecretStore};
 use daemon::{DaemonPaths, DaemonServer, Manager, SingleInstance};
 use ssh::KnownHosts;
@@ -35,7 +37,9 @@ async fn main() -> Result<()> {
     };
 
     let known_hosts = KnownHosts::at(paths.root().join("known_hosts"))?;
-    // TODO(task 7.3, Windows): switch to KeyringStore once the credential UI exists.
+    #[cfg(windows)]
+    let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new("sentinel"));
+    #[cfg(not(windows))]
     let secrets: Arc<dyn SecretStore> = Arc::new(MemoryStore::new());
     let store = match store::Store::open(&paths.state_db())? {
         store::Opened::Clean(store) => store,

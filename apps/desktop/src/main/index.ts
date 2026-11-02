@@ -117,6 +117,30 @@ function registerIpc(): void {
     return result
   })
 
+  ipcMain.handle('secret:delete', async (_event, id: string) => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'delete_secret', id })
+    if (result.result === 'error') throw new Error(result.error.message)
+  })
+
+  ipcMain.handle('host:update', async (_event, host: HostSpec, name: string, groupName: string | null) => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'update_host', host, name, group_name: groupName })
+    if (result.result === 'error') throw new Error(result.error.message)
+  })
+
+  ipcMain.handle('host:duplicate', async (_event, hostId: string, newId: string) => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'duplicate_host', host_id: hostId, new_id: newId })
+    if (result.result === 'error') throw new Error(result.error.message)
+  })
+
+  ipcMain.handle('host:delete', async (_event, hostId: string) => {
+    const daemon = await getClient()
+    const result = await daemon.request({ op: 'delete_host', host_id: hostId })
+    if (result.result === 'error') throw new Error(result.error.message)
+  })
+
   ipcMain.handle('secret:set', async (_event, id: string, secret: string) => {
     const daemon = await getClient()
     const result = await daemon.request({ op: 'set_secret', id, secret })

@@ -182,6 +182,16 @@ exists(sessionRef) -> bool
 - **字体**：Inter（界面）与 JetBrains Mono（终端）以文件形式打包进应用，通过 `@font-face` 加载，不依赖系统安装。
 - 备选：纯手写 CSS（可控但一致性差、迭代慢）、Ant Design（视觉偏后台管理系统，与终端气质不符）。
 
+### D17：主机管理与凭据生命周期
+
+- 主机条目存 SQLite，`auth_ref` 编码认证方式（`password:<credId>`、`key:<path>|<credId>`、`kbd:<credId>`、`agent`），编辑弹窗据此回填。
+- 编辑只写状态库与凭据库，不触碰运行中的会话；下一连接才读取新配置。
+- 删除主机时先 detach 其会话（远端 tmux 保留），再删库行；不做级联销毁，避免误删远端进程。
+- 复制主机在主进程/守护进程侧完成：读取源行 → 生成新 id → 若使用存储型凭据则复制secret 到新 id；GUI 只发一个 `duplicate_host` 请求。
+- 认证方式切换时删除旧凭据条目，避免"看起来还在用旧密码"。
+- Windows 上凭据库为 Credential Manager（`KeyringStore`），Linux 开发环境使用内存实现（测试与本地运行无 secret service）。
+- 密码输入框的显示切换只改变 `<input type>`，不回读已存密码；编辑时留空表示不修改。
+
 ### D15：本地化
 
 - `i18next` + `react-i18next`，资源文件按 `locales/en/*.json`、`locales/zh-CN/*.json` 组织，一个命名空间对应一个界面区域。

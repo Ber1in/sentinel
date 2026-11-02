@@ -3,7 +3,7 @@
 - Change: persistent-ssh-terminal-core
 - Phase: design
 - Mode: compact
-- Context hash: 656f72b6a58a421a5b1e7e6c6c548502d7309269d2e86fa11869b8cb14f19b65
+- Context hash: adfc7202361862b5f9110cd012cb34ff8cc32dddd931fc9dc11dfb679090c7f6
 
 Generated-by: comet-handoff.sh
 Task hash policy: task-content-v1. Read tasks.md for live completion; excerpts are design-time context.
@@ -66,8 +66,8 @@ OpenSpec remains the canonical capability spec. This handoff is a deterministic,
 ## docs/openspec/changes/persistent-ssh-terminal-core/design.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
-- Lines: 1-255
-- SHA256: afe3a0b731d34fccdbfa1392c42a19a90b04c6298973558b95d119edd1fad633
+- Lines: 1-265
+- SHA256: 67fec4c1904b70369571cb133f07bc7b0e94598f378184f412a3dafec8772b28
 
 [TRUNCATED]
 
@@ -160,8 +160,8 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 ## docs/openspec/changes/persistent-ssh-terminal-core/tasks.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/tasks.md
-- Lines: 1-90
-- SHA256: b2579c8ee486d9daa3c14f9b11361a7c8abb08b59065e6a9270ec02246f15dff
+- Lines: 1-91
+- SHA256: 509cbbaed2945c67cd41eef9a3d820c83d889498f5942ea8845a15f339b79e4a
 
 [TRUNCATED]
 
@@ -236,6 +236,7 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 - [ ] 8.8 实现复制粘贴与 bracketed paste，验证：三行命令一次粘贴后不产生分段执行回显 <!-- comet-task:6402b12e-3f41-48c3-8d81-663fc9664c41 -->
 - [ ] 8.9 实现本地化（i18next + 语言检测 + 设置内切换 + 持久化），验证：中英文切换后所有可见文案随之变化，重启后保持，且组件中无硬编码文案 <!-- comet-task:ebafcc88-82f6-4507-960d-18591e395c02 -->
 - [ ] 8.10 实现设计系统与主题（Tailwind 令牌、深色/浅色/跟随系统、强调色、内置 Inter 与 JetBrains Mono 字体），验证：切换主题与强调色重启保持；未安装字体的环境下渲染正常 <!-- comet-task:06ca5de7-0ed0-4790-ac94-6d2e7ad8642c -->
+- [ ] 8.12 实现主机管理（编辑名称/主机/端口/用户/认证方式/分组、删除并 detach 会话、复制含凭据、密码明文切换、切换认证方式清理旧凭据），验证：修改端口只影响下次连接；删除后会话变 detached；复制出的主机可直接连接 <!-- comet-task:dd6ca259-59da-4b22-8424-9d7f50c333f8 -->
 - [ ] 8.11 按设计语言打磨工作台（侧边栏卡片分组、标签主机色标、状态胶囊、`Ctrl+K` 命令面板、toast），验证：三项交互手工通过，状态同时具备文字与颜色 <!-- comet-task:bf1f9b1e-a60d-4e00-80ac-569cc7ec1d30 -->
 
 ## 9. 守护进程生命周期
@@ -245,7 +246,6 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 - [ ] 9.3 实现按需重启守护进程（升级场景）且不丢远端会话，验证：重启守护进程后所有标签自动接回，无远端会话被销毁 <!-- comet-task:4f83965e-783a-4435-8715-1e5367e13087 -->
 - [ ] 9.4 在 `docs/troubleshooting.md` 记录日志位置、协议版本查看方式、守护进程重启方法与凭据清理步骤，验证：按文档可定位一次人为制造的连接失败 <!-- comet-task:a883184b-1811-4ec9-8b93-112c43f91adc -->
 
-## 10. 集成与交付
 
 ```
 
@@ -328,8 +328,10 @@ created: 2026-11-02
 ## docs/openspec/changes/persistent-ssh-terminal-core/specs/desktop-interface/spec.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/specs/desktop-interface/spec.md
-- Lines: 1-75
-- SHA256: b6f1345091c30d6f6e79d6bbfbd0d27d8ff31ecd8ed248243281eb7e6285b0da
+- Lines: 1-84
+- SHA256: 956886e8a2c5cb8c817bc44b2eab9978a967685dd4294423a6307efe96a9061e
+
+[TRUNCATED]
 
 ```md
 # Spec Delta
@@ -408,13 +410,22 @@ created: 2026-11-02
 - **WHEN** 用户在干净的 Windows 11 上运行安装包并完成安装
 - **THEN** 开始菜单出现 Sentinel，启动后能连接主机并打开终端
 
+### Requirement: 密码输入可切换明文显示
+
+密码输入框 MUST 提供显示/隐藏切换，切换 MUST 只作用于用户当前输入的内容，MUST NOT 读取或显示已保存的密码。
+
+
 ```
+
+Full source: docs/openspec/changes/persistent-ssh-terminal-core/specs/desktop-interface/spec.md
 
 ## docs/openspec/changes/persistent-ssh-terminal-core/specs/multi-host-workspace/spec.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/specs/multi-host-workspace/spec.md
-- Lines: 1-70
-- SHA256: 6c287efd657e91608519d5142c0661fea2f6f1c895e3c32f9156bc02adaa3d70
+- Lines: 1-98
+- SHA256: 3fb74f47ac51e0fee6c6a000380185ce3d5ddf922cb16a71e0cfb89857be9cd7
+
+[TRUNCATED]
 
 ```md
 # Spec Delta
@@ -488,7 +499,19 @@ created: 2026-11-02
 - **WHEN** 用户拖拽调整标签顺序，同时另一标签正在输出大量日志
 - **THEN** 该标签的输出保持连续完整，不出现截断或乱序
 
+### Requirement: 主机条目可编辑、删除与复制
+
+系统 MUST 允许编辑已保存主机的显示名称、主机名、端口、用户名、认证方式与分组，MUST 允许删除与复制主机条目。编辑 MUST 只影响后续建立的连接，MUST NOT 影响已经打开的会话。删除主机时其会话 MUST 被 detach 而不是销毁远端会话。
+
+#### Scenario: 修改端口只影响下次连接
+
+- **WHEN** 用户把某主机端口从 22 改为 2222，且该主机已有一个已连接的标签
+- **THEN** 现有标签保持连接，下一次从该主机发起连接时使用 2222
+
+
 ```
+
+Full source: docs/openspec/changes/persistent-ssh-terminal-core/specs/multi-host-workspace/spec.md
 
 ## docs/openspec/changes/persistent-ssh-terminal-core/specs/ssh-connection-management/spec.md
 

@@ -78,9 +78,161 @@ impl Manager {
         self.changes.subscribe()
     }
 
+    /// Create or update a saved host. Validation happens here so the GUI cannot store
+    /// entries that would fail on every connect attempt.
+    pub fn update_host(
+        &self,
+        host: &HostSpec,
+        name: &str,
+        group_name: Option<String>,
+    ) -> Result<(), ProtocolError> {
+        if host.hostname.trim().is_empty() {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "hostname must not be empty",
+            ));
+        }
+        if host.username.trim().is_empty() {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "username must not be empty",
+            ));
+        }
+        if host.port == 0 {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "port must be between 1 and 65535",
+            ));
+        }
+        if matches!(&host.auth, AuthMethod::Key { key_path, .. } if key_path.trim().is_empty()) {
+            return Err(ProtocolError::new(
+                ErrorCode::InvalidRequest,
+                "key path must not be empty",
+            ));
+        }
+
+        let existing = self
+            .store
+            .lock()
+            .unwrap()
+            .host(&host.host_id)
+            .ok()
+            .flatten();
+        let record = store::HostRecord {
+            id: host.host_id.clone(),
+            name: if name.trim().is_empty() {
+                format!("{}@{}", host.username, host.hostname)
+            } else {
+                name.trim().to_string()
+            },
+            hostname: host.hostname.trim().to_string(),
+            port: host.port,
+            username: host.username.trim().to_string(),
+            auth_ref: Some(encode_auth(&host.auth)),
+            group_name,
+            last_used_at: existing
+                .map(|record| record.last_used_at)
+                .unwrap_or_else(now_millis),
+        };
+        self.store
+            .lock()
+            .unwrap()
+            .upsert_host(&record)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
+    /// Remove a host and detach its live sessions (remote tmux sessions are left alone,
+    /// so the user can still attach manually).
+    pub fn delete_host(&self, host_id: &str) -> Result<(), ProtocolError> {
+        let ids: Vec<String> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, managed)| managed.summary.host_id == host_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        for id in ids {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(managed) = sessions.remove(&id) {
+                managed.watcher.abort();
+                managed.runtime.try_send(Command::Detach);
+            }
+        }
+
+        self.store
+            .lock()
+            .unwrap()
+            .delete_host(host_id)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
     pub fn store_secret(&self, id: &str, secret: &str) -> Result<(), ProtocolError> {
         self.secrets
             .set(id, secret)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
+    /// Copy a host row and, when it uses a stored secret, copy the secret to the new id.
+    pub fn duplicate_host(&self, host_id: &str, new_id: &str) -> Result<(), ProtocolError> {
+        let source = self
+            .store
+            .lock()
+            .unwrap()
+            .host(host_id)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))?
+            .ok_or_else(|| ProtocolError::new(ErrorCode::NotFound, "host not found"))?;
+
+        let mut auth = decode_auth(source.auth_ref.as_deref().unwrap_or("agent"));
+        let mut secret_to_copy = None;
+        match &auth {
+            AuthMethod::Password { credential_id } => {
+                secret_to_copy = self.secrets.get(credential_id).ok().flatten();
+            }
+            AuthMethod::KeyboardInteractive {
+                credential_id: Some(credential_id),
+            } => {
+                secret_to_copy = self.secrets.get(credential_id).ok().flatten();
+            }
+            _ => {}
+        }
+
+        if let Some(secret) = secret_to_copy {
+            let new_credential = crate::credentials::credential_id(new_id, "password");
+            self.secrets
+                .set(&new_credential, &secret)
+                .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))?;
+            auth = match auth {
+                AuthMethod::KeyboardInteractive { .. } => AuthMethod::KeyboardInteractive {
+                    credential_id: Some(new_credential),
+                },
+                _ => AuthMethod::Password {
+                    credential_id: new_credential,
+                },
+            };
+        }
+
+        let record = store::HostRecord {
+            id: new_id.to_string(),
+            name: format!("{} (copy)", source.name),
+            hostname: source.hostname,
+            port: source.port,
+            username: source.username,
+            auth_ref: Some(encode_auth(&auth)),
+            group_name: source.group_name,
+            last_used_at: now_millis(),
+        };
+        self.store
+            .lock()
+            .unwrap()
+            .upsert_host(&record)
+            .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
+    pub fn delete_secret(&self, id: &str) -> Result<(), ProtocolError> {
+        self.secrets
+            .delete(id)
             .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
     }
 
@@ -97,6 +249,7 @@ impl Manager {
                 hostname: host.hostname,
                 port: host.port,
                 username: host.username,
+                auth: decode_auth(host.auth_ref.as_deref().unwrap_or("agent")),
                 group_name: host.group_name,
                 last_used_at: host.last_used_at,
             })
@@ -369,9 +522,145 @@ impl Manager {
     }
 }
 
+/// Persisted auth descriptors keep the method, so the edit dialog can prefill it.
+fn encode_auth(auth: &AuthMethod) -> String {
+    match auth {
+        AuthMethod::Password { credential_id } => format!("password:{credential_id}"),
+        AuthMethod::Key {
+            key_path,
+            credential_id,
+        } => {
+            format!(
+                "key:{key_path}|{}",
+                credential_id.clone().unwrap_or_default()
+            )
+        }
+        AuthMethod::Agent => "agent".to_string(),
+        AuthMethod::KeyboardInteractive { credential_id } => {
+            format!("kbd:{}", credential_id.clone().unwrap_or_default())
+        }
+    }
+}
+
+fn decode_auth(raw: &str) -> AuthMethod {
+    if let Some(rest) = raw.strip_prefix("password:") {
+        return AuthMethod::Password {
+            credential_id: rest.to_string(),
+        };
+    }
+    if let Some(rest) = raw.strip_prefix("key:") {
+        let (path, credential) = rest.split_once('|').unwrap_or((rest, ""));
+        return AuthMethod::Key {
+            key_path: path.to_string(),
+            credential_id: (!credential.is_empty()).then(|| credential.to_string()),
+        };
+    }
+    if let Some(rest) = raw.strip_prefix("kbd:") {
+        return AuthMethod::KeyboardInteractive {
+            credential_id: (!rest.is_empty()).then(|| rest.to_string()),
+        };
+    }
+    AuthMethod::Agent
+}
+
 fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::credentials::MemoryStore;
+
+    fn manager() -> Arc<Manager> {
+        Manager::new(
+            Arc::new(MemoryStore::new()),
+            Config::default(),
+            KnownHosts::in_memory(),
+            store::Store::in_memory().unwrap(),
+        )
+    }
+
+    fn host(id: &str) -> HostSpec {
+        HostSpec {
+            host_id: id.into(),
+            hostname: "10.0.0.9".into(),
+            port: 2222,
+            username: "root".into(),
+            auth: AuthMethod::Password {
+                credential_id: format!("{id}:password"),
+            },
+        }
+    }
+
+    #[test]
+    fn updating_a_host_persists_and_reports_auth_method() {
+        let manager = manager();
+        manager
+            .update_host(&host("h1"), "prod", Some("servers".into()))
+            .unwrap();
+        let hosts = manager.hosts();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].name, "prod");
+        assert_eq!(hosts[0].port, 2222);
+        assert_eq!(hosts[0].group_name.as_deref(), Some("servers"));
+        assert!(matches!(hosts[0].auth, AuthMethod::Password { .. }));
+    }
+
+    #[test]
+    fn invalid_hosts_are_rejected_with_a_readable_code() {
+        let manager = manager();
+        let mut broken = host("h1");
+        broken.hostname = "  ".into();
+        let error = manager.update_host(&broken, "x", None).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidRequest);
+
+        let mut broken = host("h1");
+        broken.port = 0;
+        assert_eq!(
+            manager.update_host(&broken, "x", None).unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn empty_display_name_falls_back_to_user_at_host() {
+        let manager = manager();
+        manager.update_host(&host("h1"), "   ", None).unwrap();
+        assert_eq!(manager.hosts()[0].name, "root@10.0.0.9");
+    }
+
+    #[test]
+    fn duplicate_copies_the_host_and_its_secret() {
+        let manager = manager();
+        manager.update_host(&host("h1"), "prod", None).unwrap();
+        manager.store_secret("h1:password", "hunter2").unwrap();
+
+        manager.duplicate_host("h1", "h2").unwrap();
+        let hosts = manager.hosts();
+        assert_eq!(hosts.len(), 2);
+        let copy = hosts.iter().find(|entry| entry.id == "h2").unwrap();
+        assert!(copy.name.ends_with("(copy)"));
+        assert_eq!(
+            manager.secrets.get("h2:password").unwrap().as_deref(),
+            Some("hunter2")
+        );
+    }
+
+    #[test]
+    fn deleting_a_host_removes_it() {
+        let manager = manager();
+        manager.update_host(&host("h1"), "prod", None).unwrap();
+        manager.delete_host("h1").unwrap();
+        assert!(manager.hosts().is_empty());
+    }
+
+    #[test]
+    fn deleting_a_missing_host_is_not_an_error() {
+        let manager = manager();
+        manager.delete_host("nope").unwrap();
+    }
 }

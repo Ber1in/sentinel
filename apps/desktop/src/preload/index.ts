@@ -39,6 +39,12 @@ const api = {
   createSession: (host: HostSpec, paneId: string, cwd: string | null): Promise<CreateSessionReply> =>
     ipcRenderer.invoke('session:create', host, paneId, cwd),
   setSecret: (id: string, secret: string): Promise<void> => ipcRenderer.invoke('secret:set', id, secret),
+  deleteSecret: (id: string): Promise<void> => ipcRenderer.invoke('secret:delete', id),
+  updateHost: (host: HostSpec, name: string, groupName: string | null): Promise<void> =>
+    ipcRenderer.invoke('host:update', host, name, groupName),
+  deleteHost: (hostId: string): Promise<void> => ipcRenderer.invoke('host:delete', hostId),
+  duplicateHost: (hostId: string, newId: string): Promise<void> =>
+    ipcRenderer.invoke('host:duplicate', hostId, newId),
   sendInput: (sessionId: string, payload: Uint8Array): Promise<boolean> =>
     ipcRenderer.invoke('session:input', sessionId, payload),
   resync: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:resync', sessionId),

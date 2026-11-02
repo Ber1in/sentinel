@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::session::{HostSpec, ProviderKind, SessionState, SessionSummary};
+use crate::session::{AuthMethod, HostSpec, ProviderKind, SessionState, SessionSummary};
 
 /// Upper bound for one control message; larger frames are rejected by the daemon.
 pub const MAX_CONTROL_BYTES: usize = 1024 * 1024;
@@ -91,6 +91,25 @@ pub enum ClientOp {
         id: String,
         secret: String,
     },
+    /// Create or update a saved host, including its display name and group.
+    UpdateHost {
+        host: HostSpec,
+        name: String,
+        group_name: Option<String>,
+    },
+    /// Remove a saved host and detach any live sessions belonging to it.
+    DeleteHost {
+        host_id: String,
+    },
+    /// Forget a stored secret (used when the authentication method changes).
+    DeleteSecret {
+        id: String,
+    },
+    /// Copy a saved host (including its secret) under a new id.
+    DuplicateHost {
+        host_id: String,
+        new_id: String,
+    },
     CreateSession {
         host: HostSpec,
         pane_id: String,
@@ -164,6 +183,7 @@ pub struct HostSummary {
     pub hostname: String,
     pub port: u16,
     pub username: String,
+    pub auth: AuthMethod,
     pub group_name: Option<String>,
     pub last_used_at: i64,
 }

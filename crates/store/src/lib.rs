@@ -230,6 +230,35 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_host(&mut self, id: &str) -> Result<(), StoreError> {
+        self.conn
+            .execute("DELETE FROM host WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn host(&self, id: &str) -> Result<Option<HostRecord>, StoreError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT id, name, hostname, port, username, auth_ref, group_name, last_used_at
+                 FROM host WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(HostRecord {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        hostname: row.get(2)?,
+                        port: row.get(3)?,
+                        username: row.get(4)?,
+                        auth_ref: row.get(5)?,
+                        group_name: row.get(6)?,
+                        last_used_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
     pub fn hosts(&self) -> Result<Vec<HostRecord>, StoreError> {
         let mut statement = self.conn.prepare(
             "SELECT id, name, hostname, port, username, auth_ref, group_name, last_used_at

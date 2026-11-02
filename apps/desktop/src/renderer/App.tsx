@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronsRight, Command, Moon, Plus, Server, Settings, Sun, Terminal as TerminalIcon, X } from 'lucide-react'
+import { ChevronsRight, Command, Eye, EyeOff, Moon, Pencil, Plus, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
 import type { HostSummary } from '../shared/HostSummary'
 import type { SessionState } from '../shared/SessionState'
 import type { ProviderKind } from '../shared/ProviderKind'
@@ -40,6 +40,7 @@ export function App() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [editing, setEditing] = useState<{ host: HostSummary; isNew: boolean } | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const terminals = useRef(new Map<number, Terminal>())
   const t = useMemo(() => translator(language), [language])
@@ -185,22 +186,30 @@ export function App() {
               <p className="px-2 py-3 text-[12px] leading-relaxed text-muted">{t('hosts.empty')}</p>
             ) : (
               hosts.map((host) => (
-                <button
+                <div
                   key={host.id}
-                  onClick={() => void openSession(host)}
                   className="group mb-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-elevated"
                 >
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-elevated text-muted group-hover:text-accent">
-                    <Server size={14} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px]">{host.name}</span>
-                    <span className="block truncate text-[11px] text-muted">
-                      {host.hostname}:{host.port}
+                  <button onClick={() => void openSession(host)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-elevated text-muted group-hover:text-accent">
+                      <Server size={14} />
                     </span>
-                  </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px]">{host.name}</span>
+                      <span className="block truncate text-[11px] text-muted">
+                        {host.username}@{host.hostname}:{host.port}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    className="grid h-6 w-6 place-items-center rounded text-muted opacity-0 transition hover:bg-canvas hover:text-ink group-hover:opacity-100"
+                    title={t('action.edit')}
+                    onClick={() => setEditing({ host, isNew: false })}
+                  >
+                    <Pencil size={12} />
+                  </button>
                   <ChevronsRight size={13} className="text-muted opacity-0 transition group-hover:opacity-100" />
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -290,6 +299,17 @@ export function App() {
           setPaletteOpen(false)
           setDialogOpen(true)
         }}
+      />
+
+      <HostDialog
+        state={editing}
+        onClose={() => setEditing(null)}
+        t={t}
+        onSaved={() => {
+          setEditing(null)
+          void refreshHosts()
+        }}
+        onError={(message) => pushToast(message)}
       />
 
       <SettingsDialog
@@ -597,4 +617,218 @@ declare global {
   interface Window {
     desktop: import('../preload/index').DesktopApi
   }
+}
+
+function HostDialog(props: {
+  state: { host: HostSummary; isNew: boolean } | null
+  onClose: () => void
+  t: (key: string) => string
+  onSaved: () => void
+  onError: (message: string) => void
+}) {
+  const { state, onClose, t, onSaved, onError } = props
+  const [name, setName] = useState('')
+  const [hostname, setHostname] = useState('')
+  const [port, setPort] = useState('22')
+  const [username, setUsername] = useState('')
+  const [group, setGroup] = useState('')
+  const [method, setMethod] = useState<'password' | 'key' | 'agent'>('password')
+  const [keyPath, setKeyPath] = useState('')
+  const [password, setPassword] = useState('')
+  const [reveal, setReveal] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  useEffect(() => {
+    if (!state) return
+    const host = state.host
+    setName(host.name)
+    setHostname(host.hostname)
+    setPort(String(host.port))
+    setUsername(host.username)
+    setGroup(host.group_name ?? '')
+    setMethod(host.auth.method === 'keyboard_interactive' ? 'password' : host.auth.method)
+    setKeyPath(host.auth.method === 'key' ? host.auth.key_path : '')
+    setPassword('')
+    setReveal(false)
+    setConfirmDelete(false)
+  }, [state])
+
+  const host = state?.host
+  if (!state || !host) return null
+
+  const save = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      const hostId = host.id
+      const credentialId = `${hostId}:password`
+      const previousCredential =
+        host.auth.method === 'password'
+          ? host.auth.credential_id
+          : host.auth.method === 'key'
+            ? host.auth.credential_id
+            : null
+
+      if (method === 'password' && password) {
+        await window.desktop.setSecret(credentialId, password)
+      }
+      if (previousCredential && method !== 'password') {
+        await window.desktop.deleteSecret(previousCredential)
+      }
+
+      await window.desktop.updateHost(
+        {
+          host_id: hostId,
+          hostname: hostname.trim(),
+          port: Number(port) || 22,
+          username: username.trim(),
+          auth:
+            method === 'password'
+              ? { method: 'password', credential_id: credentialId }
+              : method === 'key'
+                ? { method: 'key', key_path: keyPath.trim(), credential_id: null }
+                : { method: 'agent' }
+        },
+        name,
+        group.trim() ? group.trim() : null
+      )
+      onSaved()
+    } catch (error) {
+      onError((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (): Promise<void> => {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setBusy(true)
+    try {
+      await window.desktop.deleteHost(host.id)
+      onSaved()
+    } catch (error) {
+      onError((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const duplicate = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      await window.desktop.duplicateHost(host.id, crypto.randomUUID())
+      onSaved()
+    } catch (error) {
+      onError((error as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => (!open ? onClose() : undefined)}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-surface p-5 shadow-2xl">
+          <Dialog.Title className="mb-4 text-[14px] font-medium">
+            {state.isNew ? t('action.duplicate') : t('action.edit')} · {host.name}
+          </Dialog.Title>
+          <form className="space-y-3" onSubmit={save}>
+            <Field label={t('host.name')}>
+              <input value={name} onChange={(event) => setName(event.target.value)} className="input" />
+            </Field>
+            <div className="grid grid-cols-[1fr_92px] gap-3">
+              <Field label={t('connect.host')}>
+                <input required value={hostname} onChange={(event) => setHostname(event.target.value)} className="input" />
+              </Field>
+              <Field label={t('connect.port')}>
+                <input value={port} onChange={(event) => setPort(event.target.value)} className="input" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('connect.user')}>
+                <input required value={username} onChange={(event) => setUsername(event.target.value)} className="input" />
+              </Field>
+              <Field label={t('host.group')}>
+                <input value={group} onChange={(event) => setGroup(event.target.value)} className="input" />
+              </Field>
+            </div>
+            <Field label={t('connect.auth')}>
+              <select value={method} onChange={(event) => setMethod(event.target.value as 'password' | 'key' | 'agent')} className="input">
+                <option value="password">{t('connect.auth.password')}</option>
+                <option value="key">{t('connect.auth.key')}</option>
+                <option value="agent">{t('connect.auth.agent')}</option>
+              </select>
+            </Field>
+            {method === 'password' ? (
+              <Field label={t('connect.password')}>
+                <div className="relative">
+                  <input
+                    type={reveal ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder={t('host.passwordKeep')}
+                    className="input pr-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setReveal((current) => !current)}
+                    title={reveal ? t('action.hide') : t('action.show')}
+                    className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded text-muted transition hover:text-ink"
+                  >
+                    {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </Field>
+            ) : null}
+            {method === 'key' ? (
+              <Field label={t('connect.key')}>
+                <input value={keyPath} onChange={(event) => setKeyPath(event.target.value)} className="input" />
+              </Field>
+            ) : null}
+
+            <div className="flex items-center justify-between gap-2 pt-2">
+              <div className="flex gap-2">
+                {!state.isNew ? (
+                  <button
+                    type="button"
+                    onClick={() => void remove()}
+                    disabled={busy}
+                    className="rounded-lg px-2.5 py-1.5 text-[12px] text-danger transition hover:bg-elevated"
+                  >
+                    {confirmDelete ? t('host.deleteConfirm') : t('action.delete')}
+                  </button>
+                ) : null}
+                {!state.isNew ? (
+                  <button
+                    type="button"
+                    onClick={() => void duplicate()}
+                    className="rounded-lg px-2.5 py-1.5 text-[12px] text-muted transition hover:bg-elevated hover:text-ink"
+                  >
+                    {t('action.duplicate')}
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={onClose} className="rounded-lg px-3 py-1.5 text-[12px] text-muted transition hover:text-ink">
+                  {t('action.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-canvas transition hover:opacity-90 disabled:opacity-50"
+                >
+                  {t('action.save')}
+                </button>
+              </div>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
 }

@@ -211,6 +211,26 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
         ClientOp::ListHosts => OpResult::Hosts {
             hosts: manager.hosts(),
         },
+        ClientOp::UpdateHost {
+            host,
+            name,
+            group_name,
+        } => match manager.update_host(&host, &name, group_name) {
+            Ok(()) => OpResult::Ok,
+            Err(error) => OpResult::Error { error },
+        },
+        ClientOp::DuplicateHost { host_id, new_id } => manager
+            .duplicate_host(&host_id, &new_id)
+            .map(|_| OpResult::Ok)
+            .unwrap_or_else(|error| OpResult::Error { error }),
+        ClientOp::DeleteSecret { id } => match manager.delete_secret(&id) {
+            Ok(()) => OpResult::Ok,
+            Err(error) => OpResult::Error { error },
+        },
+        ClientOp::DeleteHost { host_id } => match manager.delete_host(&host_id) {
+            Ok(()) => OpResult::Ok,
+            Err(error) => OpResult::Error { error },
+        },
         ClientOp::SetSecret { id, secret } => match manager.store_secret(&id, &secret) {
             Ok(()) => OpResult::Ok,
             Err(error) => OpResult::Error { error },
