@@ -307,6 +307,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ssh",
+ "store",
  "tempfile",
  "terminal",
  "thiserror 2.0.21",

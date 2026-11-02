@@ -6,7 +6,11 @@ import type { SessionSummary } from "./SessionSummary";
 /**
  * Result payload of one [`ClientOp`].
  */
-export type OpResult = { "result": "ok" } | { "result": "sessions", sessions: Array<SessionSummary>, } | { "result": "session", session_id: string, provider: ProviderKind, 
+export type OpResult = { "result": "ok" } | { "result": "sessions", sessions: Array<SessionSummary>, } | { "result": "session", session_id: string, 
+/**
+ * Numeric id used in binary data frames.
+ */
+numeric: number, provider: ProviderKind, 
 /**
  * True when the remote side had to be recreated (process is gone).
  */

@@ -40,6 +40,34 @@ export class ProtocolMismatchError extends Error {
   }
 }
 
+export interface OutputEvent {
+  numeric: number
+  seq: number
+  bytes: Uint8Array
+}
+
+/** Binary frame layout must match `crates/protocol/src/messages.rs`. */
+export function encodeInputFrame(numeric: number, seq: number, payload: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(13 + payload.byteLength)
+  const view = new DataView(buffer)
+  view.setUint8(0, 2)
+  view.setUint32(1, numeric, true)
+  view.setBigUint64(5, BigInt(seq), true)
+  new Uint8Array(buffer, 13).set(payload)
+  return buffer
+}
+
+export function decodeOutputFrame(buffer: ArrayBuffer): OutputEvent | null {
+  if (buffer.byteLength < 13) return null
+  const view = new DataView(buffer)
+  if (view.getUint8(0) !== 1) return null
+  return {
+    numeric: view.getUint32(1, true),
+    seq: Number(view.getBigUint64(5, true)),
+    bytes: new Uint8Array(buffer, 13)
+  }
+}
+
 interface Pending {
   resolve: (result: OpResult) => void
   reject: (error: Error) => void
@@ -57,17 +85,28 @@ export class DaemonClient {
   private readonly pending = new Map<number, Pending>()
   private nextId = 1
   private closed = false
+  private readonly onOutput: ((event: OutputEvent) => void) | null
+  private readonly numericIds = new Map<string, number>()
 
-  private constructor(socket: WebSocket, info: ServerInfo, port: number) {
+  private constructor(
+    socket: WebSocket,
+    info: ServerInfo,
+    port: number,
+    onOutput: ((event: OutputEvent) => void) | null
+  ) {
     this.socket = socket
     this.info = info
     this.port = port
+    this.onOutput = onOutput
     socket.addEventListener('message', (event) => this.onMessage(event.data))
     socket.addEventListener('close', () => this.failAll(new Error('daemon connection closed')))
     socket.addEventListener('error', () => this.failAll(new Error('daemon connection error')))
   }
 
-  static async connect(timeoutMs = 5000): Promise<DaemonClient> {
+  static async connect(
+    onOutput: ((event: OutputEvent) => void) | null = null,
+    timeoutMs = 5000
+  ): Promise<DaemonClient> {
     const file = JSON.parse(
       await readFile(join(daemonDataDir(), 'daemon.json'), 'utf8')
     ) as DaemonFile
@@ -109,7 +148,7 @@ export class DaemonClient {
       })
     })
 
-    return new DaemonClient(socket, info, file.port)
+    return new DaemonClient(socket, info, file.port, onOutput)
   }
 
   request(op: ClientOp, timeoutMs = 10000): Promise<OpResult> {
@@ -126,6 +165,17 @@ export class DaemonClient {
     })
   }
 
+  registerNumeric(sessionId: string, numeric: number): void {
+    this.numericIds.set(sessionId, numeric)
+  }
+
+  sendInput(sessionId: string, payload: Uint8Array): boolean {
+    const numeric = this.numericIds.get(sessionId)
+    if (numeric === undefined || this.closed) return false
+    this.socket.send(encodeInputFrame(numeric, 0, payload))
+    return true
+  }
+
   close(): void {
     this.closed = true
     this.socket.close()
@@ -133,6 +183,11 @@ export class DaemonClient {
   }
 
   private onMessage(data: unknown): void {
+    if (data instanceof ArrayBuffer) {
+      const frame = decodeOutputFrame(data)
+      if (frame && this.onOutput) this.onOutput(frame)
+      return
+    }
     const message = parseServerMessage(data)
     if (!message) return
     if (message.type === 'reply') {

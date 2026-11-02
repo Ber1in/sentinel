@@ -1,6 +1,7 @@
-//! Loopback WebSocket server and the handshake gate.
+//! Loopback WebSocket server: handshake gate, request dispatch, and streaming.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -12,14 +13,21 @@ use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{accept_async, WebSocketStream};
 
+use protocol::{
+    decode_data_frame, encode_data_frame, ClientMessage, ClientOp, ErrorCode, FrameKind, OpResult,
+    ProtocolError, ServerEvent, ServerInfo, ServerMessage, PROTOCOL_VERSION,
+};
+
+use crate::manager::Manager;
 use crate::paths::DaemonPaths;
 use crate::token::{now_millis, write_daemon_file, DaemonFile};
-use protocol::{ClientMessage, ServerInfo, ServerMessage, PROTOCOL_VERSION};
 
 /// How long a client has to complete the handshake.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A running daemon listener.
+/// Default number of lines replayed to a GUI that attaches.
+const REPLAY_LINES: usize = 2_000;
+
 pub struct DaemonServer {
     pub addr: SocketAddr,
     pub token: String,
@@ -28,11 +36,8 @@ pub struct DaemonServer {
 }
 
 impl DaemonServer {
-    /// Bind to an ephemeral loopback port, publish `daemon.json`, and start accepting.
-    pub async fn start(paths: &DaemonPaths) -> Result<Self> {
+    pub async fn start(paths: &DaemonPaths, manager: Arc<Manager>) -> Result<Self> {
         paths.ensure()?;
-
-        // Stale files from a crashed run must never be trusted.
         let _ = std::fs::remove_file(paths.daemon_file());
 
         let listener = TcpListener::bind(("127.0.0.1", 0))
@@ -46,15 +51,17 @@ impl DaemonServer {
             pid: std::process::id(),
         };
 
-        let daemon_file = DaemonFile {
-            pid: info.pid,
-            port: addr.port(),
-            token: token.clone(),
-            protocol_version: PROTOCOL_VERSION,
-            daemon_version: info.daemon_version.clone(),
-            started_at: now_millis(),
-        };
-        write_daemon_file(&paths.daemon_file(), &daemon_file)?;
+        write_daemon_file(
+            &paths.daemon_file(),
+            &DaemonFile {
+                pid: info.pid,
+                port: addr.port(),
+                token: token.clone(),
+                protocol_version: PROTOCOL_VERSION,
+                daemon_version: info.daemon_version.clone(),
+                started_at: now_millis(),
+            },
+        )?;
 
         let accept_token = token.clone();
         let accept_info = info.clone();
@@ -64,8 +71,9 @@ impl DaemonServer {
                     Ok((stream, _peer)) => {
                         let token = accept_token.clone();
                         let info = accept_info.clone();
+                        let manager = manager.clone();
                         tokio::spawn(async move {
-                            if let Err(error) = serve_connection(stream, token, info).await {
+                            if let Err(error) = serve_connection(stream, token, info, manager).await {
                                 tracing::debug!(%error, "client connection ended");
                             }
                         });
@@ -75,12 +83,7 @@ impl DaemonServer {
             }
         });
 
-        Ok(Self {
-            addr,
-            token,
-            info,
-            task,
-        })
+        Ok(Self { addr, token, info, task })
     }
 
     pub fn url(&self) -> String {
@@ -96,13 +99,10 @@ async fn serve_connection(
     stream: TcpStream,
     expected_token: String,
     info: ServerInfo,
+    manager: Arc<Manager>,
 ) -> Result<()> {
     let ws = accept_async(stream).await.context("websocket upgrade")?;
-    let mut ws = match tokio::time::timeout(
-        HANDSHAKE_TIMEOUT,
-        handshake(ws, &expected_token, info.clone()),
-    )
-    .await
+    let ws = match tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake(ws, &expected_token, info)).await
     {
         Ok(Ok(ws)) => ws,
         Ok(Err(error)) => {
@@ -115,43 +115,115 @@ async fn serve_connection(
         }
     };
 
-    while let Some(message) = ws.next().await {
-        match message? {
-            Message::Close(_) => break,
-            Message::Ping(payload) => ws.send(Message::Pong(payload)).await?,
-            Message::Text(text) => {
-                let reply = match serde_json::from_str::<ClientMessage>(&text) {
-                    Ok(ClientMessage::Request { id, op }) => ServerMessage::Reply {
-                        id,
-                        result: handle_op(op),
-                    },
-                    Ok(ClientMessage::Hello { .. }) => ServerMessage::Reply {
-                        id: 0,
-                        result: protocol::OpResult::Error {
-                            error: protocol::ProtocolError::new(
-                                protocol::ErrorCode::InvalidRequest,
-                                "already handshaken",
-                            ),
-                        },
-                    },
-                    Err(error) => ServerMessage::Reply {
-                        id: 0,
-                        result: protocol::OpResult::Error {
-                            error: protocol::ProtocolError::with_detail(
-                                protocol::ErrorCode::InvalidRequest,
-                                "malformed control message",
-                                error.to_string(),
-                            ),
-                        },
-                    },
-                };
-                ws.send(Message::Text(serde_json::to_string(&reply)?))
-                    .await?;
+    let (mut sink, mut incoming) = ws.split();
+    let mut changes = manager.subscribe_changes();
+    let mut chunks = manager.subscribe_chunks();
+
+    loop {
+        tokio::select! {
+            message = incoming.next() => {
+                let Some(message) = message else { break };
+                match message? {
+                    Message::Close(_) => break,
+                    Message::Ping(payload) => sink.send(Message::Pong(payload)).await?,
+                    Message::Text(text) => {
+                        if let Some(reply) = handle_request(&manager, &text) {
+                            sink.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                        }
+                    }
+                    Message::Binary(frame) => {
+                        if let Some((FrameKind::Input, numeric, _seq, payload)) =
+                            decode_data_frame(&frame)
+                        {
+                            if let Some(session) = manager.session_by_numeric(numeric) {
+                                manager.send_input(&session, payload.to_vec());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
-            _ => {}
+            change = changes.recv() => {
+                if let Ok(change) = change {
+                    let event = ServerEvent::SessionState {
+                        session_id: change.session_id,
+                        state: change.state,
+                        detail: change.detail,
+                    };
+                    sink.send(Message::Text(serde_json::to_string(&ServerMessage::Event { event })?))
+                        .await?;
+                }
+            }
+            chunk = chunks.recv() => {
+                if let Ok(chunk) = chunk {
+                    let frame = encode_data_frame(FrameKind::Output, chunk.session, chunk.seq, &chunk.bytes);
+                    sink.send(Message::Binary(frame)).await?;
+                }
+            }
         }
     }
     Ok(())
+}
+
+/// Returns the reply to send, or `None` for fire-and-forget requests.
+fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
+    let Ok(ClientMessage::Request { id, op }) = serde_json::from_str::<ClientMessage>(text) else {
+        return Some(ServerMessage::Reply {
+            id: 0,
+            result: OpResult::Error {
+                error: ProtocolError::new(ErrorCode::InvalidRequest, "malformed control message"),
+            },
+        });
+    };
+
+    let result = match op {
+        ClientOp::ListSessions => OpResult::Sessions { sessions: manager.list() },
+        ClientOp::ListHosts => OpResult::Hosts { hosts: manager.hosts() },
+        ClientOp::SetSecret { id, secret } => match manager.store_secret(&id, &secret) {
+            Ok(()) => OpResult::Ok,
+            Err(error) => OpResult::Error { error },
+        },
+        ClientOp::CreateSession { host, pane_id, cwd } => {
+            match manager.create(&host, pane_id, cwd) {
+                Ok(summary) => OpResult::Session {
+                    numeric: manager.numeric_id(&summary.session_id).unwrap_or_default(),
+                    session_id: summary.session_id,
+                    provider: summary.provider,
+                    recreated: false,
+                },
+                Err(error) => OpResult::Error { error },
+            }
+        }
+        ClientOp::Attach { session_id } => match manager.list().iter().find(|s| s.session_id == session_id) {
+            Some(summary) => OpResult::Session {
+                numeric: manager.numeric_id(&summary.session_id).unwrap_or_default(),
+                session_id: summary.session_id.clone(),
+                provider: summary.provider,
+                recreated: false,
+            },
+            None => OpResult::Error {
+                error: ProtocolError::new(ErrorCode::NotFound, "session not found"),
+            },
+        },
+        ClientOp::Detach { session_id } => {
+            manager.detach(&session_id);
+            OpResult::Ok
+        }
+        ClientOp::Destroy { session_id } => {
+            manager.destroy(&session_id);
+            OpResult::Ok
+        }
+        ClientOp::Resize { session_id, cols, rows } => {
+            manager.resize(&session_id, cols, rows);
+            OpResult::Ok
+        }
+        ClientOp::Resync { session_id, .. } => {
+            manager.replay(&session_id, REPLAY_LINES);
+            OpResult::Ok
+        }
+        ClientOp::RestartDaemon => OpResult::Ok,
+    };
+    Some(ServerMessage::Reply { id, result })
 }
 
 /// Validate the first client message. Returns the still-open socket on success.
@@ -167,11 +239,7 @@ pub async fn handshake(
 
     let accepted = match first {
         Message::Text(text) => match serde_json::from_str::<ClientMessage>(&text) {
-            Ok(ClientMessage::Hello {
-                protocol_version,
-                token,
-                ..
-            }) => {
+            Ok(ClientMessage::Hello { protocol_version, token, .. }) => {
                 if protocol_version != PROTOCOL_VERSION {
                     reject(&mut ws, "protocol_version", "protocol version mismatch").await?;
                     false
@@ -183,12 +251,7 @@ pub async fn handshake(
                 }
             }
             _ => {
-                reject(
-                    &mut ws,
-                    "invalid_request",
-                    "handshake must start with hello",
-                )
-                .await?;
+                reject(&mut ws, "invalid_request", "handshake must start with hello").await?;
                 false
             }
         },
@@ -202,21 +265,17 @@ pub async fn handshake(
         anyhow::bail!("handshake rejected");
     }
 
-    ws.send(Message::Text(serde_json::to_string(
-        &ServerMessage::Hello { info },
-    )?))
-    .await?;
+    ws.send(Message::Text(serde_json::to_string(&ServerMessage::Hello { info })?))
+        .await?;
     Ok(ws)
 }
 
 async fn reject(ws: &mut WebSocketStream<TcpStream>, code: &str, reason: &str) -> Result<()> {
-    ws.send(Message::Text(serde_json::to_string(
-        &ServerMessage::Event {
-            event: protocol::ServerEvent::DaemonShuttingDown {
-                reason: format!("{code}: {reason}"),
-            },
-        },
-    )?))
+    ws.send(Message::Text(
+        serde_json::to_string(&ServerMessage::Event {
+            event: ServerEvent::DaemonShuttingDown { reason: format!("{code}: {reason}") },
+        })?,
+    ))
     .await?;
     ws.send(Message::Close(Some(CloseFrame {
         code: CloseCode::Policy,
@@ -224,23 +283,4 @@ async fn reject(ws: &mut WebSocketStream<TcpStream>, code: &str, reason: &str) -
     })))
     .await?;
     Ok(())
-}
-
-/// Dispatch one client request. Session-aware operations arrive with the registry
-/// (group 5); until then they report `not_found` rather than pretending success.
-fn handle_op(op: protocol::ClientOp) -> protocol::OpResult {
-    use protocol::{ClientOp, ErrorCode, OpResult, ProtocolError};
-    match op {
-        ClientOp::ListSessions => OpResult::Sessions {
-            sessions: Vec::new(),
-        },
-        ClientOp::RestartDaemon => OpResult::Ok,
-        other => OpResult::Error {
-            error: ProtocolError::with_detail(
-                ErrorCode::NotFound,
-                "operation is not available yet",
-                format!("{other:?}"),
-            ),
-        },
-    }
 }

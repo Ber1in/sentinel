@@ -113,6 +113,11 @@ impl SessionRuntime {
         self.commands.send(command).await.is_ok()
     }
 
+    /// Non-blocking variant for callers that are not async (IPC read loop).
+    pub fn try_send(&self, command: Command) -> bool {
+        self.commands.try_send(command).is_ok()
+    }
+
     /// Recent output for a fresh or reconnecting GUI.
     pub fn replay(&self, lines: usize) -> Vec<u8> {
         self.scrollback.lock().unwrap().tail_lines(lines)

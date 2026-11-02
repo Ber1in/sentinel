@@ -84,6 +84,13 @@ pub enum ClientMessage {
 #[ts(export)]
 pub enum ClientOp {
     ListSessions,
+    /// Persisted hosts, newest first.
+    ListHosts,
+    /// Store a secret in the OS credential store under `id`.
+    SetSecret {
+        id: String,
+        secret: String,
+    },
     CreateSession {
         host: HostSpec,
         pane_id: String,
@@ -132,8 +139,13 @@ pub enum OpResult {
     Sessions {
         sessions: Vec<SessionSummary>,
     },
+    Hosts {
+        hosts: Vec<HostSummary>,
+    },
     Session {
         session_id: String,
+        /// Numeric id used in binary data frames.
+        numeric: u32,
         provider: ProviderKind,
         /// True when the remote side had to be recreated (process is gone).
         recreated: bool,
@@ -141,6 +153,19 @@ pub enum OpResult {
     Error {
         error: ProtocolError,
     },
+}
+
+/// Persisted host as shown in the sidebar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct HostSummary {
+    pub id: String,
+    pub name: String,
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    pub group_name: Option<String>,
+    pub last_used_at: i64,
 }
 
 /// Structured, machine-readable error.

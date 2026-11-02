@@ -10,6 +10,7 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ssh.workspace = true
+store.workspace = true
 persistence.workspace = true
 terminal.workspace = true
 russh.workspace = true
@@ -25,4 +26,6 @@ rand = "0.8"
 fs2 = "0.4"
 
 [dev-dependencies]
+ssh.workspace = true
+store.workspace = true
 tempfile = "3"

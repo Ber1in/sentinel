@@ -1,0 +1,107 @@
+export type Language = 'en' | 'zh-CN'
+
+const dictionaries: Record<Language, Record<string, string>> = {
+  en: {
+    'app.name': 'Sentinel',
+    'app.tagline': 'Persistent SSH workspaces',
+    'action.connect': 'Connect',
+    'action.new': 'New connection',
+    'action.close': 'Close',
+    'action.cancel': 'Cancel',
+    'action.save': 'Save',
+    'action.retry': 'Retry',
+    'hosts.title': 'Hosts',
+    'hosts.empty': 'No hosts yet — connect once and it will show up here.',
+    'sessions.title': 'Open sessions',
+    'sessions.empty': 'No open sessions',
+    'connect.title': 'New connection',
+    'connect.host': 'Host',
+    'connect.port': 'Port',
+    'connect.user': 'Username',
+    'connect.password': 'Password',
+    'connect.key': 'Private key path',
+    'connect.auth': 'Authentication',
+    'connect.auth.password': 'Password',
+    'connect.auth.key': 'Private key',
+    'connect.auth.agent': 'SSH agent',
+    'connect.submit': 'Connect',
+    'state.connecting': 'Connecting',
+    'state.connected': 'Connected',
+    'state.reconnecting': 'Reconnecting',
+    'state.detached': 'Detached',
+    'state.lost': 'Lost',
+    'state.failed': 'Failed',
+    'settings.language': 'Language',
+    'settings.theme': 'Theme',
+    'settings.theme.dark': 'Dark',
+    'settings.theme.light': 'Light',
+    'settings.title': 'Settings',
+    'palette.placeholder': 'Search hosts and actions…',
+    'empty.title': 'No terminal open',
+    'empty.body': 'Press ⌘/Ctrl + K to find a host, or create a new connection.',
+    'error.auth': 'Authentication failed. Check your credentials.',
+    'error.network': 'Network error. Sentinel will retry automatically.',
+    'error.generic': 'Something went wrong.'
+  },
+  'zh-CN': {
+    'app.name': 'Sentinel',
+    'app.tagline': '持久化 SSH 工作台',
+    'action.connect': '连接',
+    'action.new': '新建连接',
+    'action.close': '关闭',
+    'action.cancel': '取消',
+    'action.save': '保存',
+    'action.retry': '重试',
+    'hosts.title': '主机',
+    'hosts.empty': '还没有主机——连接一次后就会出现在这里。',
+    'sessions.title': '已打开会话',
+    'sessions.empty': '暂无会话',
+    'connect.title': '新建连接',
+    'connect.host': '主机',
+    'connect.port': '端口',
+    'connect.user': '用户名',
+    'connect.password': '密码',
+    'connect.key': '私钥路径',
+    'connect.auth': '认证方式',
+    'connect.auth.password': '密码',
+    'connect.auth.key': '私钥',
+    'connect.auth.agent': 'SSH Agent',
+    'connect.submit': '连接',
+    'state.connecting': '连接中',
+    'state.connected': '已连接',
+    'state.reconnecting': '重连中',
+    'state.detached': '已脱离',
+    'state.lost': '已丢失',
+    'state.failed': '失败',
+    'settings.language': '界面语言',
+    'settings.theme': '主题',
+    'settings.theme.dark': '深色',
+    'settings.theme.light': '浅色',
+    'settings.title': '设置',
+    'palette.placeholder': '搜索主机与操作…',
+    'empty.title': '还没有打开终端',
+    'empty.body': '按 ⌘/Ctrl + K 查找主机，或新建连接。',
+    'error.auth': '认证失败，请检查凭据。',
+    'error.network': '网络错误，Sentinel 会自动重试。',
+    'error.generic': '出了点问题。'
+  }
+}
+
+export function detectLanguage(): Language {
+  const stored = localStorage.getItem('sentinel.language')
+  if (stored === 'en' || stored === 'zh-CN') return stored
+  const system = navigator.language.toLowerCase()
+  return system.startsWith('zh') ? 'zh-CN' : 'en'
+}
+
+export function translator(language: Language) {
+  return (key: string, vars?: Record<string, string | number>): string => {
+    let text = dictionaries[language][key] ?? dictionaries.en[key] ?? key
+    if (vars) {
+      for (const [name, value] of Object.entries(vars)) {
+        text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value))
+      }
+    }
+    return text
+  }
+}

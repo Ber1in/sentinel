@@ -97,3 +97,14 @@ cargo build --release --target x86_64-pc-windows-gnu -p daemon
 ## 许可
 
 MIT。
+
+## 桌面客户端
+
+界面为深色优先的终端工作台：左侧主机列表、标签条、状态胶囊，`Ctrl+K` 命令面板，支持简体中文与英文、深色/浅色主题。
+
+```bash
+pnpm --dir apps/desktop dev      # 开发（WSL 下需要 ELECTRON_DISABLE_SANDBOX=1）
+pnpm --dir apps/desktop dist:win # 产出 Windows 安装包与便携版到 apps/desktop/release
+```
+
+当前构建产物位于 `/mnt/d/Downloads/Sentinel Setup 0.1.0.exe`（安装包）与 `/mnt/d/Downloads/Sentinel 0.1.0.exe`（便携版）。安装包内置 `daemon.exe`，首次启动会由 GUI 自动拉起。
