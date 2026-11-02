@@ -72,6 +72,37 @@ export function App() {
     void refreshHosts()
   }, [refreshHosts])
 
+  // Reattach sessions the daemon still owns (GUI restart, crash, upgrade).
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const sessions = await window.desktop.listSessions()
+        if (cancelled || sessions.length === 0) return
+        setTabs((current) => {
+          const known = new Set(current.map((tab) => tab.sessionId))
+          const restored = sessions
+            .filter((session) => !known.has(session.session_id))
+            .map((session) => ({
+              id: session.session_id,
+              sessionId: session.session_id,
+              numeric: session.numeric,
+              hostId: session.host_id,
+              title: session.title,
+              state: session.state,
+              provider: session.provider
+            }))
+          return [...current, ...restored]
+        })
+      } catch {
+        // daemon not up yet; the status card explains it
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const register = useCallback((numeric: number, terminal: Terminal | null) => {
     if (terminal) terminals.current.set(numeric, terminal)
     else terminals.current.delete(numeric)
@@ -119,9 +150,9 @@ export function App() {
             hostname: host.hostname,
             port: host.port,
             username: host.username,
-            auth: { method: 'agent' }
+            auth: host.auth
           },
-          crypto.randomUUID(),
+          'main',
           null
         )
         const tab: Tab = {
@@ -435,7 +466,7 @@ function QuickConnect(props: {
                 ? { method: 'key', key_path: keyPath, credential_id: null }
                 : { method: 'agent' }
         },
-        crypto.randomUUID(),
+        'main',
         null
       )
       onDone({
@@ -619,13 +650,26 @@ declare global {
   }
 }
 
-function HostDialog(props: {
-  state: { host: HostSummary; isNew: boolean } | null
+type HostDialogState = { host: HostSummary; isNew: boolean }
+
+interface HostDialogProps {
+  state: HostDialogState | null
   onClose: () => void
   t: (key: string) => string
   onSaved: () => void
   onError: (message: string) => void
-}) {
+}
+
+/**
+ * Mount the inner dialog only when there is something to edit. Keeping the hooks out of
+ * the wrapper avoids rendering a half-initialised Radix tree.
+ */
+function HostDialog(props: HostDialogProps) {
+  if (!props.state) return null
+  return <HostDialogInner {...props} state={props.state} />
+}
+
+function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
   const { state, onClose, t, onSaved, onError } = props
   const [name, setName] = useState('')
   const [hostname, setHostname] = useState('')
@@ -647,15 +691,16 @@ function HostDialog(props: {
     setPort(String(host.port))
     setUsername(host.username)
     setGroup(host.group_name ?? '')
-    setMethod(host.auth.method === 'keyboard_interactive' ? 'password' : host.auth.method)
-    setKeyPath(host.auth.method === 'key' ? host.auth.key_path : '')
+    // A daemon from an older build may not send `auth`; fall back to agent.
+    const auth = host.auth ?? { method: 'agent' as const }
+    setMethod(auth.method === 'keyboard_interactive' ? 'password' : auth.method)
+    setKeyPath(auth.method === 'key' ? auth.key_path : '')
     setPassword('')
     setReveal(false)
     setConfirmDelete(false)
   }, [state])
 
-  const host = state?.host
-  if (!state || !host) return null
+  const host = state.host
 
   const save = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -663,11 +708,12 @@ function HostDialog(props: {
     try {
       const hostId = host.id
       const credentialId = `${hostId}:password`
+      const previousAuth = host.auth ?? { method: 'agent' as const }
       const previousCredential =
-        host.auth.method === 'password'
-          ? host.auth.credential_id
-          : host.auth.method === 'key'
-            ? host.auth.credential_id
+        previousAuth.method === 'password'
+          ? previousAuth.credential_id
+          : previousAuth.method === 'key'
+            ? previousAuth.credential_id
             : null
 
       if (method === 'password' && password) {

@@ -286,7 +286,10 @@ impl Manager {
             .lock()
             .unwrap()
             .values()
-            .map(|managed| managed.summary.clone())
+            .map(|managed| SessionSummary {
+                numeric: managed.numeric,
+                ..managed.summary.clone()
+            })
             .collect()
     }
 
@@ -322,11 +325,20 @@ impl Manager {
     ) -> Result<SessionSummary, ProtocolError> {
         let credentials = self.resolve_credentials(host)?;
         let session_id = format!("{}:{}", host.host_id, pane_id);
-        if self.sessions.lock().unwrap().contains_key(&session_id) {
-            return Err(ProtocolError::new(
-                ErrorCode::InvalidRequest,
-                "session already exists for this pane",
-            ));
+
+        // Reopening the GUI (or clicking the same host again) must attach to the live
+        // session instead of failing or creating a second shell.
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(managed) = sessions.get(&session_id) {
+                if *managed.runtime.events.state.borrow() == SessionState::Connected {
+                    return Ok(managed.summary.clone());
+                }
+                // A dead runtime cannot be reused; drop it and reconnect from scratch.
+                let dead = sessions.remove(&session_id).unwrap();
+                dead.watcher.abort();
+                dead.runtime.try_send(Command::Shutdown);
+            }
         }
 
         let provider: Arc<dyn persistence::PersistenceProvider> = Arc::new(
@@ -372,6 +384,7 @@ impl Manager {
         let runtime = SessionRuntime::spawn(spec);
         let summary = SessionSummary {
             session_id: session_id.clone(),
+            numeric,
             host_id: host.host_id.clone(),
             title: format!("{}@{}", host.username, host.hostname),
             state: SessionState::Connecting,

@@ -5,7 +5,11 @@ import type { SessionState } from "./SessionState";
 /**
  * Lightweight view of a session, used by the sidebar and session lists.
  */
-export type SessionSummary = { session_id: string, host_id: string, title: string, state: SessionState, provider: ProviderKind, cwd: string | null, 
+export type SessionSummary = { session_id: string, 
+/**
+ * Numeric id used in binary data frames; required to reattach after a GUI restart.
+ */
+numeric: number, host_id: string, title: string, state: SessionState, provider: ProviderKind, cwd: string | null, 
 /**
  * Unix epoch milliseconds of the last activity seen by the daemon.
  */

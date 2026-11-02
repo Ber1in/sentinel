@@ -73,6 +73,8 @@ pub struct HostSpec {
 #[ts(export)]
 pub struct SessionSummary {
     pub session_id: String,
+    /// Numeric id used in binary data frames; required to reattach after a GUI restart.
+    pub numeric: u32,
     pub host_id: String,
     pub title: String,
     pub state: SessionState,

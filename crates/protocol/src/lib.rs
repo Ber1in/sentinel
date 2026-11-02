@@ -14,7 +14,7 @@ pub use messages::*;
 pub use session::*;
 
 /// Bumped whenever a wire-incompatible change is made.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Handshake payload returned by the daemon after a successful connect.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn protocol_version_is_stable() {
-        assert_eq!(PROTOCOL_VERSION, 1);
+        assert_eq!(PROTOCOL_VERSION, 2);
     }
 
     #[test]
