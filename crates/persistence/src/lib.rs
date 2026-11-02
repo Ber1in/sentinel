@@ -92,9 +92,10 @@ pub trait PersistenceProvider: Send + Sync {
     /// Provider kind reported over the wire.
     fn kind(&self) -> ProviderKind;
 
-    /// Stable remote session name for a pane. Must be deterministic: reconnects rely on
-    /// regenerating the same name.
-    fn session_name(&self, host_id: &str, pane_id: &str) -> String;
+    /// Stable remote session name for a pane. `namespace` identifies the client
+    /// installation so two clients never attach to each other's shells. Must be
+    /// deterministic: reconnects rely on regenerating the same name.
+    fn session_name(&self, namespace: &str, host_id: &str, pane_id: &str) -> String;
 
     /// Program+arguments used to open the interactive pane. Running it attaches to an
     /// existing session or creates one.

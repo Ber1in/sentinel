@@ -22,8 +22,8 @@ impl PersistenceProvider for NoPersistence {
         ProviderKind::None
     }
 
-    fn session_name(&self, host_id: &str, pane_id: &str) -> String {
-        format!("np_{host_id}_{pane_id}")
+    fn session_name(&self, namespace: &str, host_id: &str, pane_id: &str) -> String {
+        format!("np_{namespace}_{host_id}_{pane_id}")
     }
 
     fn attach_command(&self, _session_name: &str, cwd: Option<&str>) -> String {

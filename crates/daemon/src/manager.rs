@@ -39,6 +39,8 @@ struct Managed {
 }
 
 pub struct Manager {
+    /// Short client id used in remote session names.
+    namespace: String,
     sessions: Mutex<HashMap<String, Managed>>,
     store: Mutex<store::Store>,
     next_numeric: AtomicU32,
@@ -51,6 +53,7 @@ pub struct Manager {
 
 impl Manager {
     pub fn new(
+        namespace: impl Into<String>,
         secrets: Arc<dyn SecretStore>,
         config: Config,
         known_hosts: KnownHosts,
@@ -59,6 +62,7 @@ impl Manager {
         let (chunks, _) = broadcast::channel(512);
         let (changes, _) = broadcast::channel(256);
         Arc::new(Self {
+            namespace: namespace.into(),
             sessions: Mutex::new(HashMap::new()),
             store: Mutex::new(store),
             next_numeric: AtomicU32::new(1),
@@ -337,6 +341,7 @@ impl Manager {
 
         let spec = SessionSpec {
             session_id: session_id.clone(),
+            namespace: self.namespace.clone(),
             host_id: host.host_id.clone(),
             pane_id,
             connect: ConnectOptions {
@@ -577,6 +582,7 @@ mod tests {
 
     fn manager() -> Arc<Manager> {
         Manager::new(
+            "testns",
             Arc::new(MemoryStore::new()),
             Config::default(),
             KnownHosts::in_memory(),

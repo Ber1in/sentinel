@@ -5,17 +5,17 @@
   "canonical_spec": "openspec",
   "task_hash_policy": "task-content-v1",
   "generated_by": "comet-handoff.sh",
-  "context_hash": "adfc7202361862b5f9110cd012cb34ff8cc32dddd931fc9dc11dfb679090c7f6",
+  "context_hash": "08cddea0e8d8ab67a97f9e95f92988132bd1e03d79c6583b68bb56f300d18e13",
   "files": [
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/proposal.md", "sha256": "f4e63ce2bc1e47d7c03576b371bfc9708b1b8030d9130f48f4eadd52fe09ec44" },
-    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/design.md", "sha256": "67fec4c1904b70369571cb133f07bc7b0e94598f378184f412a3dafec8772b28" },
-    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/tasks.md", "sha256": "509cbbaed2945c67cd41eef9a3d820c83d889498f5942ea8845a15f339b79e4a" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/design.md", "sha256": "c6b7e8369ce0c1378635f9e59b202ec42892b9bd8d0cee5558ed07c82ba1bc59" },
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/tasks.md", "sha256": "0bf1ae0baedf5bae64b2b96c046cdce7222aa53bdeb3cdf8ee8e905f129183e0" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/.openspec.yaml", "sha256": "71e91d8f42848565b00ec7bb4da95cf19e2182f4adc440c230b10a0f3345023b" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/credential-and-config-storage/spec.md", "sha256": "ba9ae32d180f52f92e7c153078dee6c53c33b0e805f52c8719d6f379b4b598aa" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/desktop-interface/spec.md", "sha256": "956886e8a2c5cb8c817bc44b2eab9978a967685dd4294423a6307efe96a9061e" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/multi-host-workspace/spec.md", "sha256": "3fb74f47ac51e0fee6c6a000380185ce3d5ddf922cb16a71e0cfb89857be9cd7" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/ssh-connection-management/spec.md", "sha256": "320d7abf67c6eeff83cd1d4463fde960ae91db998984c148eb9088244c74e97b" },
     { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-emulation/spec.md", "sha256": "f48f1a45a1128bd6a05bcaf149517763ff8e52a9b9fa1bb6ae8963e9ac18ad3b" },
-    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md", "sha256": "4dcc6dd9d31daf941a6ebfcb6744d6169bf4342106d4daf87e2d5e61c41c484d" }
+    { "path": "docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md", "sha256": "3fc71e4bbead912fe94efb9afe540757708d65e4e12536f34c2832bf2692ba82" }
   ]
 }

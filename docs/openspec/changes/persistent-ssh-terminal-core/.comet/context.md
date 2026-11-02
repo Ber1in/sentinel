@@ -3,7 +3,7 @@
 - Change: persistent-ssh-terminal-core
 - Phase: design
 - Mode: compact
-- Context hash: adfc7202361862b5f9110cd012cb34ff8cc32dddd931fc9dc11dfb679090c7f6
+- Context hash: 08cddea0e8d8ab67a97f9e95f92988132bd1e03d79c6583b68bb56f300d18e13
 
 Generated-by: comet-handoff.sh
 Task hash policy: task-content-v1. Read tasks.md for live completion; excerpts are design-time context.
@@ -66,8 +66,8 @@ OpenSpec remains the canonical capability spec. This handoff is a deterministic,
 ## docs/openspec/changes/persistent-ssh-terminal-core/design.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
-- Lines: 1-265
-- SHA256: 67fec4c1904b70369571cb133f07bc7b0e94598f378184f412a3dafec8772b28
+- Lines: 1-272
+- SHA256: c6b7e8369ce0c1378635f9e59b202ec42892b9bd8d0cee5558ed07c82ba1bc59
 
 [TRUNCATED]
 
@@ -160,8 +160,8 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 ## docs/openspec/changes/persistent-ssh-terminal-core/tasks.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/tasks.md
-- Lines: 1-91
-- SHA256: 509cbbaed2945c67cd41eef9a3d820c83d889498f5942ea8845a15f339b79e4a
+- Lines: 1-92
+- SHA256: 0bf1ae0baedf5bae64b2b96c046cdce7222aa53bdeb3cdf8ee8e905f129183e0
 
 [TRUNCATED]
 
@@ -236,6 +236,7 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 - [ ] 8.8 实现复制粘贴与 bracketed paste，验证：三行命令一次粘贴后不产生分段执行回显 <!-- comet-task:6402b12e-3f41-48c3-8d81-663fc9664c41 -->
 - [ ] 8.9 实现本地化（i18next + 语言检测 + 设置内切换 + 持久化），验证：中英文切换后所有可见文案随之变化，重启后保持，且组件中无硬编码文案 <!-- comet-task:ebafcc88-82f6-4507-960d-18591e395c02 -->
 - [ ] 8.10 实现设计系统与主题（Tailwind 令牌、深色/浅色/跟随系统、强调色、内置 Inter 与 JetBrains Mono 字体），验证：切换主题与强调色重启保持；未安装字体的环境下渲染正常 <!-- comet-task:06ca5de7-0ed0-4790-ac94-6d2e7ad8642c -->
+- [x] 8.13 实现客户端身份命名空间（首次启动生成 uuid4 并持久化，会话名包含客户端前缀，provider 接口增加 namespace），验证：两台客户端的会话名不同；重启与升级后标识不变；真实 sshd 集成测试通过 <!-- comet-task:6a905341-a926-4ab9-87e8-a53823a4ea81 -->
 - [ ] 8.12 实现主机管理（编辑名称/主机/端口/用户/认证方式/分组、删除并 detach 会话、复制含凭据、密码明文切换、切换认证方式清理旧凭据），验证：修改端口只影响下次连接；删除后会话变 detached；复制出的主机可直接连接 <!-- comet-task:dd6ca259-59da-4b22-8424-9d7f50c333f8 -->
 - [ ] 8.11 按设计语言打磨工作台（侧边栏卡片分组、标签主机色标、状态胶囊、`Ctrl+K` 命令面板、toast），验证：三项交互手工通过，状态同时具备文字与颜色 <!-- comet-task:bf1f9b1e-a60d-4e00-80ac-569cc7ec1d30 -->
 
@@ -245,7 +246,6 @@ Full source: docs/openspec/changes/persistent-ssh-terminal-core/design.md
 - [ ] 9.2 实现看门狗：守护进程崩溃后自动重启并重连全部可恢复会话，验证：任务管理器结束守护进程后 10 秒内恢复且会话标注正确 <!-- comet-task:45c95353-20cb-4487-9576-cc503aa0eea1 -->
 - [ ] 9.3 实现按需重启守护进程（升级场景）且不丢远端会话，验证：重启守护进程后所有标签自动接回，无远端会话被销毁 <!-- comet-task:4f83965e-783a-4435-8715-1e5367e13087 -->
 - [ ] 9.4 在 `docs/troubleshooting.md` 记录日志位置、协议版本查看方式、守护进程重启方法与凭据清理步骤，验证：按文档可定位一次人为制造的连接失败 <!-- comet-task:a883184b-1811-4ec9-8b93-112c43f91adc -->
-
 
 ```
 
@@ -685,8 +685,10 @@ GUI 短暂卡顿、重连或重开期间，守护进程 MUST 缓冲终端输出�
 ## docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md
 
 - Source: docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md
-- Lines: 1-70
-- SHA256: 4dcc6dd9d31daf941a6ebfcb6744d6169bf4342106d4daf87e2d5e61c41c484d
+- Lines: 1-84
+- SHA256: 3fc71e4bbead912fe94efb9afe540757708d65e4e12536f34c2832bf2692ba82
+
+[TRUNCATED]
 
 ```md
 # Spec Delta
@@ -760,4 +762,16 @@ GUI 短暂卡顿、重连或重开期间，守护进程 MUST 缓冲终端输出�
 - **WHEN** 到某主机的网络中断
 - **THEN** 对应标签在界面显示 reconnecting 状态，网络恢复后自动变为 connected，无需用户操作
 
+### Requirement: 远端会话按客户端安装隔离
+
+远端会话名 MUST 包含该客户端安装的稳定标识，使同一账号下的两个 Windows 客户端永远不会接回彼此的会话。标识 MUST 在首次启动时生成并持久化，MUST NOT 因升级而变化。
+
+#### Scenario: 两台客户端连同一台服务器互不干扰
+
+- **WHEN** 两台安装了 Sentinel 的 Windows 客户端分别连接同一台 Linux 主机
+- **THEN** 它们各自创建并接回自己的远端会话，互不可见对方的 shell
+
+
 ```
+
+Full source: docs/openspec/changes/persistent-ssh-terminal-core/specs/terminal-session-persistence/spec.md

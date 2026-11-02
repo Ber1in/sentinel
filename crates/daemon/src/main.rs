@@ -36,6 +36,9 @@ async fn main() -> Result<()> {
         }
     };
 
+    let identity = daemon::client_id::load_or_create(paths.root())?;
+    tracing::info!(client = %identity.short(), "client identity");
+
     let known_hosts = KnownHosts::at(paths.root().join("known_hosts"))?;
     #[cfg(windows)]
     let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore::new("sentinel"));
@@ -52,7 +55,7 @@ async fn main() -> Result<()> {
             store
         }
     };
-    let manager = Manager::new(secrets, config, known_hosts, store);
+    let manager = Manager::new(identity.short(), secrets, config, known_hosts, store);
 
     let server = DaemonServer::start(&paths, manager).await?;
     println!("{}", server.url());

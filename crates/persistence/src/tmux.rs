@@ -65,8 +65,8 @@ impl TmuxPersistence {
         &self.options
     }
 
-    /// `st_<host>_<pane>` with everything outside `[A-Za-z0-9_-]` folded to `-`.
-    pub fn make_session_name(host_id: &str, pane_id: &str) -> String {
+    /// `st_<namespace>_<host>_<pane>`, with everything outside `[A-Za-z0-9_-]` folded to `-`.
+    pub fn make_session_name(namespace: &str, host_id: &str, pane_id: &str) -> String {
         let sanitize = |value: &str| {
             value
                 .chars()
@@ -79,7 +79,12 @@ impl TmuxPersistence {
                 })
                 .collect::<String>()
         };
-        format!("st_{}_{}", sanitize(host_id), sanitize(pane_id))
+        format!(
+            "st_{}_{}_{}",
+            sanitize(namespace),
+            sanitize(host_id),
+            sanitize(pane_id)
+        )
     }
 
     fn tmux(&self, args: &str) -> String {
@@ -166,8 +171,8 @@ impl PersistenceProvider for TmuxPersistence {
         ProviderKind::Tmux
     }
 
-    fn session_name(&self, host_id: &str, pane_id: &str) -> String {
-        Self::make_session_name(host_id, pane_id)
+    fn session_name(&self, namespace: &str, host_id: &str, pane_id: &str) -> String {
+        Self::make_session_name(namespace, host_id, pane_id)
     }
 
     fn attach_command(&self, session_name: &str, cwd: Option<&str>) -> String {
@@ -266,11 +271,22 @@ mod tests {
 
     #[test]
     fn session_names_are_deterministic_and_safe() {
-        let a = TmuxPersistence::make_session_name("host-1", "pane/9");
-        let b = TmuxPersistence::make_session_name("host-1", "pane/9");
+        let a = TmuxPersistence::make_session_name("client1", "host-1", "pane/9");
+        let b = TmuxPersistence::make_session_name("client1", "host-1", "pane/9");
         assert_eq!(a, b);
-        assert_eq!(a, "st_host-1_pane-9");
-        assert_ne!(a, TmuxPersistence::make_session_name("host-1", "pane/8"));
+        assert_eq!(a, "st_client1_host-1_pane-9");
+        assert_ne!(
+            a,
+            TmuxPersistence::make_session_name("client1", "host-1", "pane/8")
+        );
+    }
+
+    #[test]
+    fn different_clients_never_share_a_session_name() {
+        let one = TmuxPersistence::make_session_name("aaaaaaaa", "host-1", "pane-1");
+        let two = TmuxPersistence::make_session_name("bbbbbbbb", "host-1", "pane-1");
+        assert_ne!(one, two);
+        assert!(one.contains("aaaaaaaa"));
     }
 
     #[test]

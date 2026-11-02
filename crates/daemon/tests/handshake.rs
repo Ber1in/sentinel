@@ -10,6 +10,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 async fn start(paths: &DaemonPaths) -> DaemonServer {
     let manager = Manager::new(
+        "testns",
         Arc::new(MemoryStore::new()),
         Config::default(),
         ssh::KnownHosts::in_memory(),
@@ -211,6 +212,7 @@ async fn create_session_streams_terminal_output() {
     use daemon::credentials::SecretStore;
     secrets.set("host-1:password", &password).unwrap();
     let manager = Manager::new(
+        "testns",
         secrets,
         Config::default(),
         ssh::KnownHosts::in_memory(),

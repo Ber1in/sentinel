@@ -71,7 +71,7 @@ async fn connect() -> Option<(Arc<Connection>, TmuxPersistence, String)> {
         socket: format!("sshtermtest-{}", std::process::id()),
         ..TmuxOptions::default()
     });
-    let session = TmuxPersistence::make_session_name("host", "pane");
+    let session = TmuxPersistence::make_session_name("testclient", "host", "pane");
     Some((Arc::new(connection), provider, session))
 }
 

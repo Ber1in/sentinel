@@ -27,6 +27,7 @@ fn spec(session_id: &str, socket: &str, spill: &std::path::Path) -> Option<Sessi
 
     Some(SessionSpec {
         session_id: session_id.to_string(),
+        namespace: "testns".into(),
         host_id: "testhost".into(),
         pane_id: format!("pane-{session_id}"),
         connect: ConnectOptions {
@@ -200,7 +201,7 @@ async fn a_vanished_remote_session_is_recreated_and_reported() {
     // The remote session disappears while we are disconnected. The tmux socket lives per
     // uid, so this must run as the test user rather than as the test runner.
     let user = env("SSHTERM_TEST_USER").unwrap();
-    let session = TmuxPersistence::make_session_name("testhost", "pane-s2");
+    let session = TmuxPersistence::make_session_name("testns", "testhost", "pane-s2");
     let killed = Process::new("runuser")
         .args([
             "-u",

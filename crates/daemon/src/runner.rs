@@ -44,6 +44,8 @@ pub enum Command {
 #[derive(Clone)]
 pub struct SessionSpec {
     pub session_id: String,
+    /// Client-installation namespace; keeps remote session names globally unique.
+    pub namespace: String,
     pub host_id: String,
     pub pane_id: String,
     pub connect: ConnectOptions,
@@ -188,7 +190,9 @@ async fn run_loop(
         .as_ref()
         .and_then(|dir| SpillStore::open(dir, &spec.session_id, spec.spill_max_bytes).ok());
     let mut queued = InputQueue::default();
-    let session_name = spec.provider.session_name(&spec.host_id, &spec.pane_id);
+    let session_name = spec
+        .provider
+        .session_name(&spec.namespace, &spec.host_id, &spec.pane_id);
 
     let publish = |state: SessionState| {
         let _ = state_tx.send(state);

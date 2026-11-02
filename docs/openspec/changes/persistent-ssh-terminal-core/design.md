@@ -182,6 +182,13 @@ exists(sessionRef) -> bool
 - **字体**：Inter（界面）与 JetBrains Mono（终端）以文件形式打包进应用，通过 `@font-face` 加载，不依赖系统安装。
 - 备选：纯手写 CSS（可控但一致性差、迭代慢）、Ant Design（视觉偏后台管理系统，与终端气质不符）。
 
+### D18：客户端身份命名空间
+
+- 首次启动生成 uuid4，写入 `%LOCALAPPDATA%\sentinel\client.json`（0600），升级保留；文件损坏时备份后重建，不静默覆盖。
+- 会话名改为 `st_<clientId前8位>_<hostId>_<paneId>`，`PersistenceProvider::session_name` 增加 `namespace` 参数。
+- 该标识是**命名空间而不是凭证**：同账号的其他用户仍可手工 attach tmux 或读取远端 socket；真正的隔离需要独立 SSH 账号，文档必须写清。
+- provider 接口变化只影响 tmux/no-persistence 两个实现与调用点，不影响协议。
+
 ### D17：主机管理与凭据生命周期
 
 - 主机条目存 SQLite，`auth_ref` 编码认证方式（`password:<credId>`、`key:<path>|<credId>`、`kbd:<credId>`、`agent`），编辑弹窗据此回填。
