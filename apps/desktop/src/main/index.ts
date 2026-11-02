@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { spawn } from 'node:child_process'
-import { mkdirSync, openSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { HostSpec } from '../shared/HostSpec'
@@ -50,22 +50,93 @@ function spawnDaemon(): void {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
+function dataDir(): string {
+  const base = process.env.LOCALAPPDATA ?? process.env.XDG_DATA_HOME ?? ''
+  return join(base, 'sentinel')
+}
+
+function readPid(file: string): number | null {
+  try {
+    const parsed = JSON.parse(readFileSync(join(dataDir(), file), 'utf8')) as { pid?: number }
+    return typeof parsed.pid === 'number' ? parsed.pid : null
+  } catch {
+    return null
+  }
+}
+
+/** Guard against killing an unrelated process after a pid was reused. */
+function looksLikeOurs(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false
+  try {
+    if (process.platform === 'win32') {
+      const output = execFileSync(
+        'tasklist',
+        ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+        { encoding: 'utf8' }
+      ).toLowerCase()
+      return output.includes('daemon.exe')
+    }
+    return readFileSync(`/proc/${pid}/comm`, 'utf8').toLowerCase().includes('daemon')
+  } catch {
+    return false
+  }
+}
+
+function killPid(pid: number): void {
+  if (!looksLikeOurs(pid)) return
+  try {
+    process.kill(pid)
+  } catch {
+    // Already gone.
+  }
+}
+
+/**
+ * Stop the supervisor first (otherwise it immediately restarts the old daemon) and then
+ * the daemon. Needed whenever the bundled daemon is newer than the running one.
+ */
+async function stopDaemon(): Promise<void> {
+  killPid(readPid('supervisor.json') ?? -1)
+  await wait(200)
+  killPid(readPid('daemon.json') ?? -1)
+  await wait(400)
+}
+
+function daemonLogTail(): string {
+  try {
+    const text = readFileSync(join(dataDir(), 'daemon.log'), 'utf8').split('\n').slice(-8).join('\n')
+    return text.trim()
+  } catch {
+    return ''
+  }
+}
+
 async function connectOrStart(): Promise<DaemonClient> {
+  let lastError: Error | null = null
   try {
     return await DaemonClient.connect(forwardOutput, forwardSessionState)
-  } catch {
-    spawnDaemon()
-    // The daemon writes daemon.json before it accepts clients; poll briefly.
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      await wait(250)
-      try {
-        return await DaemonClient.connect(forwardOutput, forwardSessionState)
-      } catch {
-        // keep waiting
-      }
-    }
-    throw new Error('daemon did not start')
+  } catch (error) {
+    lastError = error as Error
   }
+
+  // A stale daemon (older protocol or a stuck supervisor) is the common cause, so stop
+  // whatever is running before spawning the bundled binary.
+  await stopDaemon()
+  spawnDaemon()
+
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await wait(300)
+    try {
+      return await DaemonClient.connect(forwardOutput, forwardSessionState)
+    } catch (error) {
+      lastError = error as Error
+    }
+  }
+
+  const tail = daemonLogTail()
+  throw new Error(
+    `daemon did not start: ${lastError?.message ?? 'unknown error'}${tail ? `\n\n${tail}` : ''}`
+  )
 }
 
 async function getClient(): Promise<DaemonClient> {
@@ -94,6 +165,16 @@ function registerIpc(): void {
       }
       return { connected: false, info: null, port: null, error: (error as Error).message, mismatch: null }
     }
+  })
+
+  ipcMain.handle('daemon:restart', async () => {
+    client?.close()
+    client = null
+    await stopDaemon()
+    spawnDaemon()
+    return getClient()
+      .then(() => ({ ok: true, error: null }))
+      .catch((error: Error) => ({ ok: false, error: error.message }))
   })
 
   ipcMain.handle('hosts:list', async () => {

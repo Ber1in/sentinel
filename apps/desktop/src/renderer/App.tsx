@@ -41,6 +41,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editing, setEditing] = useState<{ host: HostSummary; isNew: boolean } | null>(null)
+  const [daemonOnline, setDaemonOnline] = useState(true)
   const [toasts, setToasts] = useState<Toast[]>([])
   const terminals = useRef(new Map<number, Terminal>())
   const t = useMemo(() => translator(language), [language])
@@ -71,6 +72,19 @@ export function App() {
   useEffect(() => {
     void refreshHosts()
   }, [refreshHosts])
+
+  const checkDaemon = useCallback(async () => {
+    try {
+      const status = await window.desktop.daemonStatus()
+      setDaemonOnline(status.connected)
+    } catch {
+      setDaemonOnline(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void checkDaemon()
+  }, [checkDaemon])
 
   // Reattach sessions the daemon still owns (GUI restart, crash, upgrade).
   useEffect(() => {
@@ -245,10 +259,32 @@ export function App() {
             )}
           </div>
           <div className="border-t border-line px-3 py-2 text-[11px] text-muted">
-            <div className="flex items-center gap-1.5">
-              <Command size={12} />
-              Ctrl+K
-            </div>
+            {daemonOnline ? (
+              <div className="flex items-center gap-1.5">
+                <Command size={12} />
+                Ctrl+K
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-danger">
+                  <span className="status-dot" style={{ background: 'var(--danger)' }} />
+                  {t('daemon.offline')}
+                </span>
+                <button
+                  className="rounded px-2 py-0.5 text-[11px] text-accent transition hover:bg-elevated"
+                  onClick={() => {
+                    void (async () => {
+                      const result = await window.desktop.restartDaemon()
+                      if (!result.ok && result.error) pushToast(result.error)
+                      await checkDaemon()
+                      await refreshHosts()
+                    })()
+                  }}
+                >
+                  {t('daemon.restart')}
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 

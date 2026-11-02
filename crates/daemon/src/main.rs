@@ -44,6 +44,11 @@ fn supervise() -> Result<()> {
         }
     };
 
+    let _ = std::fs::write(
+        paths.supervisor_file(),
+        format!("{{\"pid\":{}}}", std::process::id()),
+    );
+
     let executable = std::env::current_exe()?;
     let mut backoff = Duration::from_secs(1);
     loop {
@@ -51,6 +56,7 @@ fn supervise() -> Result<()> {
         match status.code() {
             Some(0) | Some(2) => {
                 tracing::info!(?status, "daemon stopped; supervisor exiting");
+                let _ = std::fs::remove_file(paths.supervisor_file());
                 return Ok(());
             }
             Some(code) if code == RESTART_EXIT_CODE => {

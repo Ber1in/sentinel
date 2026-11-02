@@ -44,6 +44,12 @@ impl DaemonPaths {
         self.root.join("supervisor.lock")
     }
 
+    /// Pid file for the supervisor, so the GUI can stop it when the daemon must be
+    /// replaced after a version change.
+    pub fn supervisor_file(&self) -> PathBuf {
+        self.root.join("supervisor.json")
+    }
+
     pub fn scrollback_dir(&self) -> PathBuf {
         self.root.join("scrollback")
     }

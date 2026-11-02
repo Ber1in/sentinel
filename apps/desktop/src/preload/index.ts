@@ -34,6 +34,8 @@ export interface TerminalData {
 
 const api = {
   daemonStatus: (): Promise<DaemonStatus> => ipcRenderer.invoke('daemon:status'),
+  restartDaemon: (): Promise<{ ok: boolean; error: string | null }> =>
+    ipcRenderer.invoke('daemon:restart'),
   listHosts: (): Promise<HostSummary[]> => ipcRenderer.invoke('hosts:list'),
   listSessions: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:list'),
   createSession: (host: HostSpec, paneId: string, cwd: string | null): Promise<CreateSessionReply> =>
