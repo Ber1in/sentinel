@@ -46,6 +46,12 @@ export interface OutputEvent {
   bytes: Uint8Array
 }
 
+export interface SessionStateEvent {
+  sessionId: string
+  state: string
+  detail: string | null
+}
+
 /** Binary frame layout must match `crates/protocol/src/messages.rs`. */
 export function encodeInputFrame(numeric: number, seq: number, payload: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(13 + payload.byteLength)
@@ -86,18 +92,21 @@ export class DaemonClient {
   private nextId = 1
   private closed = false
   private readonly onOutput: ((event: OutputEvent) => void) | null
+  private readonly onEvent: ((event: SessionStateEvent) => void) | null
   private readonly numericIds = new Map<string, number>()
 
   private constructor(
     socket: WebSocket,
     info: ServerInfo,
     port: number,
-    onOutput: ((event: OutputEvent) => void) | null
+    onOutput: ((event: OutputEvent) => void) | null,
+    onEvent: ((event: SessionStateEvent) => void) | null
   ) {
     this.socket = socket
     this.info = info
     this.port = port
     this.onOutput = onOutput
+    this.onEvent = onEvent
     socket.addEventListener('message', (event) => this.onMessage(event.data))
     socket.addEventListener('close', () => this.failAll(new Error('daemon connection closed')))
     socket.addEventListener('error', () => this.failAll(new Error('daemon connection error')))
@@ -105,6 +114,7 @@ export class DaemonClient {
 
   static async connect(
     onOutput: ((event: OutputEvent) => void) | null = null,
+    onEvent: ((event: SessionStateEvent) => void) | null = null,
     timeoutMs = 5000
   ): Promise<DaemonClient> {
     const file = JSON.parse(
@@ -116,6 +126,8 @@ export class DaemonClient {
     }
 
     const socket = new WebSocket(`ws://127.0.0.1:${file.port}`)
+    // Node's WebSocket defaults to Blob; the frame decoder only understands ArrayBuffer.
+    socket.binaryType = 'arraybuffer'
 
     const info = await new Promise<ServerInfo>((resolve, reject) => {
       const timer = setTimeout(
@@ -148,7 +160,7 @@ export class DaemonClient {
       })
     })
 
-    return new DaemonClient(socket, info, file.port, onOutput)
+    return new DaemonClient(socket, info, file.port, onOutput, onEvent)
   }
 
   request(op: ClientOp, timeoutMs = 10000): Promise<OpResult> {
@@ -196,6 +208,13 @@ export class DaemonClient {
       this.pending.delete(message.id)
       clearTimeout(pending.timer)
       pending.resolve(message.result)
+      return
+    }
+    if (message.type === 'event' && this.onEvent) {
+      const event = message.event
+      if (event.event === 'session_state') {
+        this.onEvent({ sessionId: event.session_id, state: event.state, detail: event.detail })
+      }
     }
   }
 

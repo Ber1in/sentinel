@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { spawn } from 'node:child_process'
+import { mkdirSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { HostSpec } from '../shared/HostSpec'
-import { DaemonClient, ProtocolMismatchError, type OutputEvent } from './daemon-client'
+import { DaemonClient, ProtocolMismatchError, type OutputEvent, type SessionStateEvent } from './daemon-client'
 
 let client: DaemonClient | null = null
 let window: BrowserWindow | null = null
@@ -12,15 +13,36 @@ function forwardOutput(event: OutputEvent): void {
   window?.webContents.send('terminal:data', event)
 }
 
+function forwardSessionState(event: SessionStateEvent): void {
+  window?.webContents.send('session:state', event)
+}
+
 function daemonBinary(): string {
   if (app.isPackaged) return join(process.resourcesPath, 'daemon.exe')
   // Development: the workspace target directory next to apps/desktop.
   return join(app.getAppPath(), '..', '..', 'target', 'debug', 'daemon')
 }
 
+/** Daemon output goes to a file so connection problems are diagnosable. */
+function daemonLogTarget(): number | 'ignore' {
+  const base = process.env.LOCALAPPDATA
+  if (!base) return 'ignore'
+  try {
+    const dir = join(base, 'sentinel')
+    mkdirSync(dir, { recursive: true })
+    return openSync(join(dir, 'daemon.log'), 'a')
+  } catch {
+    return 'ignore'
+  }
+}
+
 function spawnDaemon(): void {
   const binary = daemonBinary()
-  const child = spawn(binary, [], { detached: true, stdio: 'ignore' })
+  const target = daemonLogTarget()
+  const child = spawn(binary, [], {
+    detached: true,
+    stdio: ['ignore', target, target]
+  })
   child.on('error', (error) => console.warn(`cannot start daemon: ${error.message}`))
   child.unref()
 }
@@ -29,14 +51,14 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 
 async function connectOrStart(): Promise<DaemonClient> {
   try {
-    return await DaemonClient.connect(forwardOutput)
+    return await DaemonClient.connect(forwardOutput, forwardSessionState)
   } catch {
     spawnDaemon()
     // The daemon writes daemon.json before it accepts clients; poll briefly.
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await wait(250)
       try {
-        return await DaemonClient.connect(forwardOutput)
+        return await DaemonClient.connect(forwardOutput, forwardSessionState)
       } catch {
         // keep waiting
       }
@@ -104,6 +126,11 @@ function registerIpc(): void {
   ipcMain.handle('session:input', async (_event, sessionId: string, payload: Uint8Array) => {
     const daemon = await getClient()
     return daemon.sendInput(sessionId, payload)
+  })
+
+  ipcMain.handle('session:resync', async (_event, sessionId: string) => {
+    const daemon = await getClient()
+    await daemon.request({ op: 'resync', session_id: sessionId, from_seq: BigInt(0) })
   })
 
   ipcMain.handle('session:resize', async (_event, sessionId: string, cols: number, rows: number) => {

@@ -20,6 +20,12 @@ export interface CreateSessionReply {
   recreated: boolean
 }
 
+export interface SessionStateData {
+  sessionId: string
+  state: string
+  detail: string | null
+}
+
 export interface TerminalData {
   numeric: number
   seq: number
@@ -35,10 +41,16 @@ const api = {
   setSecret: (id: string, secret: string): Promise<void> => ipcRenderer.invoke('secret:set', id, secret),
   sendInput: (sessionId: string, payload: Uint8Array): Promise<boolean> =>
     ipcRenderer.invoke('session:input', sessionId, payload),
+  resync: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:resync', sessionId),
   resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
     ipcRenderer.invoke('session:resize', sessionId, cols, rows),
   detach: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:detach', sessionId),
   destroy: (sessionId: string): Promise<void> => ipcRenderer.invoke('session:destroy', sessionId),
+  onSessionState: (handler: (data: SessionStateData) => void): (() => void) => {
+    const listener = (_event: unknown, data: SessionStateData): void => handler(data)
+    ipcRenderer.on('session:state', listener)
+    return () => ipcRenderer.removeListener('session:state', listener)
+  },
   onTerminalData: (handler: (data: TerminalData) => void): (() => void) => {
     const listener = (_event: unknown, data: TerminalData): void => handler(data)
     ipcRenderer.on('terminal:data', listener)

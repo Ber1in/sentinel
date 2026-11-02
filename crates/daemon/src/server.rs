@@ -127,7 +127,29 @@ async fn serve_connection(
                     Message::Close(_) => break,
                     Message::Ping(payload) => sink.send(Message::Pong(payload)).await?,
                     Message::Text(text) => {
-                        if let Some(reply) = handle_request(&manager, &text) {
+                        // `resync` answers with a binary replay on this connection, so it
+                        // cannot go through the generic request dispatcher.
+                        let resync = serde_json::from_str::<ClientMessage>(&text).ok().and_then(|message| match message {
+                            ClientMessage::Request { id, op: ClientOp::Resync { session_id, .. } } => {
+                                Some((id, session_id))
+                            }
+                            _ => None,
+                        });
+                        if let Some((id, session_id)) = resync {
+                            if let Some((numeric, bytes)) = manager.replay(&session_id, REPLAY_LINES) {
+                                if !bytes.is_empty() {
+                                    sink.send(Message::Binary(encode_data_frame(
+                                        FrameKind::Output,
+                                        numeric,
+                                        0,
+                                        &bytes,
+                                    )))
+                                    .await?;
+                                }
+                            }
+                            let reply = ServerMessage::Reply { id, result: OpResult::Ok };
+                            sink.send(Message::Text(serde_json::to_string(&reply)?)).await?;
+                        } else if let Some(reply) = handle_request(&manager, &text) {
                             sink.send(Message::Text(serde_json::to_string(&reply)?)).await?;
                         }
                     }

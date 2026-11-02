@@ -9,13 +9,14 @@ interface Props {
   numeric: number
   active: boolean
   onRegister: (numeric: number, terminal: Terminal | null) => void
+  onReady?: () => void
 }
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-export function TerminalPane({ sessionId, numeric, active, onRegister }: Props) {
+export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -78,6 +79,7 @@ export function TerminalPane({ sessionId, numeric, active, onRegister }: Props) 
     terminal.current = term
     fit.current = fitAddon
     onRegister(numeric, term)
+    onReady?.()
 
     return () => {
       observer.disconnect()

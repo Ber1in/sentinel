@@ -83,6 +83,16 @@ export function App() {
   }, [])
 
   useEffect(() => {
+    return window.desktop.onSessionState((data) => {
+      setTabs((current) =>
+        current.map((tab) =>
+          tab.sessionId === data.sessionId ? { ...tab, state: data.state as SessionState } : tab
+        )
+      )
+    })
+  }, [])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -246,6 +256,7 @@ export function App() {
                     numeric={tab.numeric}
                     active={activeTab === tab.id}
                     onRegister={register}
+                    onReady={() => void window.desktop.resync(tab.sessionId)}
                   />
                 </div>
               ))
