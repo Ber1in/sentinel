@@ -60,6 +60,7 @@ const EMPTY_PANE: PaneState = {
 const paneOf = (tab: Tab): PaneState => tab.panes[0] ?? EMPTY_PANE
 const paneTitle = (tab: Tab): string => paneOf(tab).title
 const paneState = (tab: Tab): SessionState => paneOf(tab).state
+const paneProvider = (tab: Tab): ProviderKind => paneOf(tab).provider
 
 interface Toast {
   id: number
@@ -1041,6 +1042,18 @@ function MenuItem({ label, onClick, trailing }: { label: string; onClick: () => 
   )
 }
 
+/** Provider shown in the status bar; reasons for a downgrade are surfaced separately. */
+function providerLabel(provider: ProviderKind, label: (key: string) => string): string {
+  switch (provider) {
+    case 'helper':
+      return label('provider.helper')
+    case 'tmux':
+      return label('provider.tmux')
+    default:
+      return label('provider.none')
+  }
+}
+
 function stateColor(state: SessionState): string {
   switch (state) {
     case 'connected':
@@ -1081,7 +1094,17 @@ function StatusBar({ tabs, activeTab, label }: { tabs: Tab[]; activeTab: string 
   const title = active ? paneTitle(active) : ''
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-line px-3 text-[11px] text-muted">
-      <span>{active ? `${label(`state.${paneState(active)}`)} · ${active.panes.length > 1 ? `${active.panes.length} panes` : 'tmux'}` : '—'}</span>
+      <span>
+        {active
+          ? [
+              label(`state.${paneState(active)}`),
+              active.panes.length > 1 ? `${active.panes.length} panes` : null,
+              providerLabel(paneProvider(active), label)
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : '—'}
+      </span>
       <span>{title}</span>
     </footer>
   )
