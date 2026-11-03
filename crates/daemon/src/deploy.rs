@@ -45,8 +45,15 @@ impl Probe {
         self.blockers().is_empty()
     }
 
-    pub fn install_dir(&self) -> PathBuf {
-        PathBuf::from(&self.home).join(".local/share/sentinel/bin")
+    /// Remote install directory as a POSIX path string.
+    ///
+    /// This must never be a `PathBuf`: on Windows its `display()` yields backslashes and
+    /// SFTP would reject the path as missing.
+    pub fn install_dir(&self) -> String {
+        format!(
+            "{}/.local/share/sentinel/bin",
+            self.home.trim_end_matches('/')
+        )
     }
 }
 
@@ -105,8 +112,8 @@ pub fn parse_probe(stdout: &str) -> Probe {
 ///
 /// Verifies the checksum, makes the file executable and swaps it in atomically, so a
 /// failed upload can never leave a half-written binary in place.
-pub fn install_script(dir: &Path, expected_sha256: &str) -> String {
-    let dir = dir.display();
+pub fn install_script(dir: &str, expected_sha256: &str) -> String {
+    let dir = dir;
     format!(
         "set -e; \
          d={dir}; \
@@ -128,7 +135,7 @@ pub fn install_script(dir: &Path, expected_sha256: &str) -> String {
 /// only place it crosses the wire.
 pub async fn upload_and_install(
     connection: &ssh::Connection,
-    dir: &std::path::Path,
+    dir: &str,
     binary: &[u8],
     expected_sha256: &str,
 ) -> anyhow::Result<String> {
@@ -143,7 +150,7 @@ pub async fn upload_and_install(
     std::fs::write(&temp, binary)?;
 
     let result = async {
-        let target = sftp::RemotePath::parse(format!("{}/.staging", dir.display()))?;
+        let target = sftp::RemotePath::parse(format!("{dir}/.staging"))?;
         let fs = sftp::SftpFs::connect(connection).await?;
         let mut progress = |_done: u64, _total: u64| {};
         fs.upload(
@@ -188,7 +195,7 @@ pub async fn ensure(connection: &ssh::Connection, helper_dir: &Path) -> anyhow::
 
     let existing = execute(
         connection,
-        &format!("\"{}/sentinel-helper\" version 2>/dev/null", dir.display()),
+        &format!("\"{dir}/sentinel-helper\" version 2>/dev/null"),
     )
     .await?;
     if existing.0 == 0 && !existing.1.trim().is_empty() {
@@ -201,8 +208,8 @@ pub async fn ensure(connection: &ssh::Connection, helper_dir: &Path) -> anyhow::
 }
 
 /// Start the helper detached and wait briefly for its socket.
-pub fn start_script(dir: &Path) -> String {
-    let dir = dir.display();
+pub fn start_script(dir: &str) -> String {
+    let dir = dir;
     format!(
         "set -e; d={dir}; \
          if \"$d/sentinel-helper\" --help >/dev/null 2>&1; then :; fi; \
@@ -286,7 +293,7 @@ pub async fn probe(connection: &ssh::Connection) -> anyhow::Result<Probe> {
 /// Install a binary that is already present at `<dir>/.staging`.
 pub async fn install_staged(
     connection: &ssh::Connection,
-    dir: &std::path::Path,
+    dir: &str,
     expected_sha256: &str,
 ) -> anyhow::Result<String> {
     let (code, stdout, stderr) = execute(connection, &install_script(dir, expected_sha256)).await?;
@@ -314,7 +321,7 @@ pub async fn install_staged(
 ///
 
 /// Start the helper detached and wait until its socket exists.
-pub async fn start(connection: &ssh::Connection, dir: &std::path::Path) -> anyhow::Result<()> {
+pub async fn start(connection: &ssh::Connection, dir: &str) -> anyhow::Result<()> {
     let (code, _stdout, stderr) = execute(connection, &start_script(dir)).await?;
     if code != 0 {
         anyhow::bail!("helper did not start (exit {code}): {}", stderr.trim());
@@ -338,6 +345,18 @@ mod tests {
         assert!(!probe.noexec);
         assert!(probe.ok());
         assert_eq!(probe.target().unwrap(), "x86_64-unknown-linux-musl");
+    }
+
+    #[test]
+    fn install_dir_is_a_posix_path_on_every_host() {
+        let probe = parse_probe(SAMPLE);
+        let dir = probe.install_dir();
+        assert!(dir.starts_with('/'), "{dir}");
+        assert!(
+            !dir.contains('\\'),
+            "backslashes reach SFTP on Windows: {dir}"
+        );
+        assert_eq!(dir, "/home/alice/.local/share/sentinel/bin");
     }
 
     #[test]
@@ -365,7 +384,7 @@ mod tests {
 
     #[test]
     fn install_script_verifies_checksum_before_swapping() {
-        let script = install_script(Path::new("/home/a/.local/share/sentinel/bin"), "abc123");
+        let script = install_script("/home/a/.local/share/sentinel/bin", "abc123");
         assert!(script.contains("sha256sum"));
         assert!(script.contains("abc123"));
         assert!(script.contains("mv -f"));
@@ -429,7 +448,7 @@ mod tests {
             .expect_err("bad checksum must fail");
         assert!(error.to_string().contains("checksum"), "{error}");
 
-        let _ = execute(&connection, &format!("rm -rf {}", dir.display())).await;
+        let _ = execute(&connection, &format!("rm -rf {dir}")).await;
         connection.disconnect().await.unwrap();
     }
 
@@ -467,7 +486,7 @@ mod tests {
 
     #[test]
     fn start_script_waits_for_the_socket() {
-        let script = start_script(Path::new("/h/bin"));
+        let script = start_script("/h/bin");
         assert!(script.contains("setsid"));
         assert!(script.contains("helper.sock"));
         assert!(script.contains("tail -n 20"));
