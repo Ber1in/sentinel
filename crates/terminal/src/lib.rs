@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 pub mod osc;
 pub mod spill;
 
-pub use osc::CwdTracker;
+pub use osc::{CommandMarks, CommandTracker, CwdTracker};
 pub use spill::{SpillError, SpillStore};
 
 /// One contiguous run of terminal bytes; `seq` is the sequence number of the first byte

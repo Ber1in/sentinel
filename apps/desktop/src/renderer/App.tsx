@@ -645,7 +645,12 @@ export function App() {
             {hosts.length === 0 ? (
               <p className="px-2 py-3 text-[12px] leading-relaxed text-muted">{t('hosts.empty')}</p>
             ) : (
-              hosts.map((host) => (
+              groupedHosts(hosts, t('hosts.ungrouped')).map(([group, entries]) => (
+                <div key={group} className="mb-1">
+                  <div className="px-2.5 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    {group}
+                  </div>
+                  {entries.map((host) => (
                 <div
                   key={host.id}
                   className="group mb-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-elevated"
@@ -672,6 +677,8 @@ export function App() {
                     <Pencil size={12} />
                   </button>
                   <ChevronsRight size={13} className="text-muted opacity-0 transition group-hover:opacity-100" />
+                </div>
+                  ))}
                 </div>
               ))
             )}
@@ -829,8 +836,7 @@ export function App() {
                     }}
                   />
                 </div>
-              ))
-            )}
+              )))}
           </div>
 
           <StatusBar tabs={tabs} activeTab={activeTab} label={t} />
@@ -948,6 +954,40 @@ export function App() {
       </div>
     </div>
   )
+}
+
+/** Group hosts by their group name, ungrouped entries last. */
+function groupedHosts(hosts: HostSummary[], ungroupedLabel: string): Array<[string, HostSummary[]]> {
+  const groups = new Map<string, HostSummary[]>()
+  for (const host of hosts) {
+    const key = host.group_name?.trim() || ungroupedLabel
+    const list = groups.get(key) ?? []
+    list.push(host)
+    groups.set(key, list)
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (a === ungroupedLabel) return 1
+    if (b === ungroupedLabel) return -1
+    return a.localeCompare(b)
+  })
+}
+
+/** Subsequence match with a preference for consecutive characters. -1 means "no match". */
+function fuzzyScore(query: string, target: string): number {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return 0
+  const haystack = target.toLowerCase()
+  let score = 0
+  let index = 0
+  let streak = 0
+  for (const character of needle) {
+    const found = haystack.indexOf(character, index)
+    if (found === -1) return -1
+    streak = found === index ? streak + 1 : 0
+    score += 1 + streak
+    index = found + 1
+  }
+  return score
 }
 
 /** Stable per-host accent so tabs and host cards share a colour. */
@@ -1210,7 +1250,11 @@ function CommandPalette(props: {
 }) {
   const { open, onOpenChange, hosts, t, onPick, onNew, actions } = props
   const [query, setQuery] = useState('')
-  const filtered = hosts.filter((host) => `${host.name} ${host.hostname}`.toLowerCase().includes(query.toLowerCase()))
+  const filtered = hosts
+    .map((host) => ({ host, score: fuzzyScore(query, `${host.name} ${host.hostname} ${host.username}`) }))
+    .filter((entry) => entry.score >= 0)
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.host)
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>

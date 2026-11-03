@@ -163,3 +163,122 @@ mod tests {
         assert_eq!(cwd.as_deref(), Some("/tmp"));
     }
 }
+
+/// Command-boundary state reported by OSC 133 (shell integration marks).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CommandMarks {
+    /// A command is currently executing.
+    pub running: bool,
+    /// Exit status of the most recently finished command.
+    pub last_exit: Option<i32>,
+}
+
+/// Incremental parser for OSC 133 marks: `A` prompt start, `C` command start,
+/// `D;<code>` command finished.
+#[derive(Debug, Default)]
+pub struct CommandTracker {
+    buffer: Vec<u8>,
+    marks: CommandMarks,
+}
+
+impl CommandTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn marks(&self) -> &CommandMarks {
+        &self.marks
+    }
+
+    /// Feed output; returns true when the marks changed.
+    pub fn feed(&mut self, bytes: &[u8]) -> bool {
+        self.buffer.extend_from_slice(bytes);
+        if self.buffer.len() > MAX_SEQUENCE {
+            let excess = self.buffer.len() - MAX_SEQUENCE;
+            self.buffer.drain(..excess);
+        }
+
+        const PREFIX: &[u8] = b"\x1b]133;";
+        let mut changed = false;
+        let mut consumed = 0usize;
+        let mut search_from = 0usize;
+
+        while let Some(offset) = find(&self.buffer[search_from..], PREFIX) {
+            let start = search_from + offset;
+            let payload_start = start + PREFIX.len();
+            let Some((end, terminator_len)) = sequence_end(&self.buffer, payload_start) else {
+                break;
+            };
+            let payload = String::from_utf8_lossy(&self.buffer[payload_start..end]).into_owned();
+            if apply_mark(&payload, &mut self.marks) {
+                changed = true;
+            }
+            consumed = end + terminator_len;
+            search_from = consumed;
+        }
+
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
+        }
+        changed
+    }
+}
+
+fn apply_mark(payload: &str, marks: &mut CommandMarks) -> bool {
+    let mut parts = payload.split(';');
+    match parts.next() {
+        Some("A") => {
+            let was = marks.running;
+            marks.running = false;
+            was
+        }
+        Some("C") => {
+            let was = marks.running;
+            marks.running = true;
+            !was
+        }
+        Some("D") => {
+            let code = parts
+                .next()
+                .and_then(|value| value.trim().parse::<i32>().ok());
+            let changed = marks.running || marks.last_exit != code;
+            marks.running = false;
+            marks.last_exit = code;
+            changed
+        }
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod mark_tests {
+    use super::*;
+
+    #[test]
+    fn tracks_running_and_exit_codes() {
+        let mut tracker = CommandTracker::new();
+        assert!(tracker.feed(b"\x1b]133;C\x07"));
+        assert!(tracker.marks().running);
+        assert!(tracker.feed(b"\x1b]133;D;0\x07"));
+        assert!(!tracker.marks().running);
+        assert_eq!(tracker.marks().last_exit, Some(0));
+        assert!(tracker.feed(b"\x1b]133;D;130\x07"));
+        assert_eq!(tracker.marks().last_exit, Some(130));
+    }
+
+    #[test]
+    fn handles_split_and_st_terminated_marks() {
+        let mut tracker = CommandTracker::new();
+        tracker.feed(b"\x1b]133;D;");
+        assert!(!tracker.marks().running);
+        tracker.feed(b"2\x1b\\");
+        assert_eq!(tracker.marks().last_exit, Some(2));
+    }
+
+    #[test]
+    fn ignores_malformed_marks() {
+        let mut tracker = CommandTracker::new();
+        tracker.feed(b"\x1b]133;X\x07");
+        assert_eq!(tracker.marks(), &CommandMarks::default());
+    }
+}
