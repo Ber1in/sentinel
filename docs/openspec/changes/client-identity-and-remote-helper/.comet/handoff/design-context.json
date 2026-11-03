@@ -1,0 +1,18 @@
+{
+  "change": "client-identity-and-remote-helper",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "task_hash_policy": "task-content-v1",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "c3ccc3cd17f4c48dd6db1df4054fd6990d7a35ffd85a9e99f6cd84220e75cacb",
+  "files": [
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/proposal.md", "sha256": "02003049c42a5c261d0d34d7b3131a22189d1100848a9ba85c41642580fd13f8" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/design.md", "sha256": "d39f34f78d026f003e6cd5f8743027b5951e280b338f0d735bb389e92ae6017d" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/tasks.md", "sha256": "bc18c4c2e910d93d6427ce152253de37f5685319489eb421cdacc87592da761b" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/.openspec.yaml", "sha256": "b6d27c089c6ee9596ce0433bd8f7f771b477758efe1ce7f7a7505af47316ecd0" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/specs/provider-selection/spec.md", "sha256": "623b96ece9d33a737347f2668cda48fcf39136046227ec4b41d50df447d61c33" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/specs/remote-helper-provisioning/spec.md", "sha256": "b757eb8596b0c3149ff7d898dfbcdd7729802da3bc8a0f23064020f31fd49b0b" },
+    { "path": "docs/openspec/changes/client-identity-and-remote-helper/specs/remote-helper-runtime/spec.md", "sha256": "1f96b1e44f4c95e4aea2b42ce210294fa67b07b038cc226228717ad68e026912" }
+  ]
+}
