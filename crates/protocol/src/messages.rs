@@ -110,6 +110,15 @@ pub enum ClientOp {
         host_id: String,
         new_id: String,
     },
+    /// Local helper bundle info plus the stored consent for `host_id`.
+    HelperInfo {
+        host_id: String,
+    },
+    /// Record whether the user allows installing the helper on `host_id`.
+    SetHelperConsent {
+        host_id: String,
+        allow: bool,
+    },
     /// Replace the persisted tab/split layout.
     SaveLayout {
         tabs: Vec<TabLayout>,
@@ -171,6 +180,9 @@ pub enum OpResult {
         tabs: Vec<TabLayout>,
         panes: Vec<PaneLayout>,
     },
+    HelperInfo {
+        info: HelperInfoView,
+    },
     Session {
         session_id: String,
         /// Numeric id used in binary data frames.
@@ -196,6 +208,18 @@ pub struct HostSummary {
     pub auth: AuthMethod,
     pub group_name: Option<String>,
     pub last_used_at: i64,
+}
+
+/// What the GUI shows before the first helper install.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct HelperInfoView {
+    pub available: bool,
+    pub install_path: String,
+    pub size: u64,
+    pub sha256: String,
+    /// `None` when the user has never been asked for this host.
+    pub consent: Option<bool>,
 }
 
 /// One tab in the persisted layout.

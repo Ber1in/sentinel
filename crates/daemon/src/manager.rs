@@ -46,6 +46,9 @@ const DUPLICATE_INPUT_WINDOW: std::time::Duration = std::time::Duration::from_mi
 pub struct Manager {
     /// Short client id used in remote session names.
     namespace: String,
+    /// Per-host helper install consent, persisted as JSON.
+    consents: Mutex<std::collections::HashMap<String, bool>>,
+    consent_path: std::path::PathBuf,
     sessions: Mutex<HashMap<String, Managed>>,
     store: Mutex<store::Store>,
     next_numeric: AtomicU32,
@@ -64,10 +67,15 @@ impl Manager {
         known_hosts: KnownHosts,
         store: store::Store,
     ) -> Arc<Self> {
+        let consent_path = std::env::var_os("SENTINEL_CONSENT_FILE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("helper-consent.json"));
         let (chunks, _) = broadcast::channel(512);
         let (changes, _) = broadcast::channel(256);
         Arc::new(Self {
             namespace: namespace.into(),
+            consents: Mutex::new(load_consents(&consent_path)),
+            consent_path,
             sessions: Mutex::new(HashMap::new()),
             store: Mutex::new(store),
             next_numeric: AtomicU32::new(1),
@@ -175,6 +183,46 @@ impl Manager {
             .unwrap()
             .delete_host(host_id)
             .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))
+    }
+
+    /// Local bundle facts plus the stored consent, shown before installing.
+    pub fn helper_info(&self, host_id: &str) -> protocol::HelperInfoView {
+        let dir = crate::deploy::helper_dir();
+        let target = "x86_64-unknown-linux-musl";
+        let path = dir.join(format!("helper-{target}"));
+        let size = std::fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+        let sha256 = std::fs::read_to_string(path.with_extension("sha256"))
+            .ok()
+            .and_then(|text| text.split_whitespace().next().map(str::to_string))
+            .unwrap_or_default();
+        protocol::HelperInfoView {
+            available: path.exists(),
+            install_path: "~/.local/share/sentinel/bin/sentinel-helper".into(),
+            size,
+            sha256,
+            consent: self.consents.lock().unwrap().get(host_id).copied(),
+        }
+    }
+
+    pub fn set_helper_consent(&self, host_id: &str, allow: bool) -> Result<(), ProtocolError> {
+        {
+            let mut consents = self.consents.lock().unwrap();
+            consents.insert(host_id.to_string(), allow);
+            let json = serde_json::to_string_pretty(&*consents)
+                .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))?;
+            std::fs::write(&self.consent_path, json)
+                .map_err(|error| ProtocolError::new(ErrorCode::Internal, error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn helper_allowed(&self, host_id: &str) -> bool {
+        let explicit = self.consents.lock().unwrap().get(host_id).copied();
+        match explicit {
+            Some(answer) => answer,
+            // No answer yet: keep the previous behaviour (tmux) until the user agrees.
+            None => false,
+        }
     }
 
     pub fn store_secret(&self, id: &str, secret: &str) -> Result<(), ProtocolError> {
@@ -423,9 +471,10 @@ impl Manager {
 
         // Opt-in switch until first-connect deployment lands: the default stays tmux so
         // existing sessions and behaviour are untouched.
-        let provider_kind = match std::env::var("SENTINEL_PROVIDER").as_deref() {
-            Ok("helper") => ProviderKind::Helper,
-            _ => ProviderKind::Tmux,
+        let provider_kind = if self.helper_allowed(&host.host_id) {
+            ProviderKind::Helper
+        } else {
+            ProviderKind::Tmux
         };
 
         let provider: Arc<dyn persistence::PersistenceProvider> = Arc::new(
@@ -685,6 +734,13 @@ fn decode_auth(raw: &str) -> AuthMethod {
         };
     }
     AuthMethod::Agent
+}
+
+fn load_consents(path: &std::path::Path) -> std::collections::HashMap<String, bool> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
 }
 
 fn now_millis() -> i64 {

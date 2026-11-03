@@ -214,6 +214,15 @@ fn handle_request(manager: &Arc<Manager>, text: &str) -> Option<ServerMessage> {
         ClientOp::ListHosts => OpResult::Hosts {
             hosts: manager.hosts(),
         },
+        ClientOp::HelperInfo { host_id } => OpResult::HelperInfo {
+            info: manager.helper_info(&host_id),
+        },
+        ClientOp::SetHelperConsent { host_id, allow } => {
+            match manager.set_helper_consent(&host_id, allow) {
+                Ok(()) => OpResult::Ok,
+                Err(error) => OpResult::Error { error },
+            }
+        }
         ClientOp::SaveLayout { tabs, panes } => match manager.save_layout(&tabs, &panes) {
             Ok(()) => OpResult::Ok,
             Err(error) => OpResult::Error { error },

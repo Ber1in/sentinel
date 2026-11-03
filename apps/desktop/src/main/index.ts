@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, openSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -240,6 +240,7 @@ function registerIpc(): void {
 
   ipcMain.handle('session:create', async (_event, host: HostSpec, paneId: string, cwd: string | null) => {
     const daemon = await getClient()
+    await ensureHelperConsent(daemon, host)
     const result = await daemon.request({ op: 'create_session', host, pane_id: paneId, cwd })
     if (result.result !== 'session') {
       throw new Error(result.result === 'error' ? result.error.message : 'unexpected daemon reply')
@@ -301,6 +302,37 @@ function registerIpc(): void {
   ipcMain.handle('session:destroy', async (_event, sessionId: string) => {
     const daemon = await getClient()
     await daemon.request({ op: 'destroy', session_id: sessionId })
+  })
+}
+
+/**
+ * Ask once per host whether the helper may be installed. The answer is stored in the
+ * daemon, so the same host is never asked again and the provider switch happens before
+ * the session is created.
+ */
+async function ensureHelperConsent(daemon: DaemonClient, host: HostSpec): Promise<void> {
+  const info = await daemon.request({ op: 'helper_info', host_id: host.host_id })
+  if (info.result !== 'helper_info') return
+  const details = info.info
+  if (!details.available || details.consent !== null) return
+
+  const chinese = app.getLocale().startsWith('zh')
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    buttons: chinese ? ['安装', '暂不'] : ['Install', 'Not now'],
+    defaultId: 0,
+    cancelId: 1,
+    message: chinese
+      ? `在 ${host.hostname} 上安装 Sentinel 远端组件？`
+      : `Install the Sentinel helper on ${host.hostname}?`,
+    detail: chinese
+      ? `路径：${details.install_path}\n大小：${(Number(details.size) / 1024 / 1024).toFixed(1)} MB\nSHA256：${details.sha256.slice(0, 16)}…\n\n只写入你的用户目录，不需要 root，可随时删除。`
+      : `Path: ${details.install_path}\nSize: ${(Number(details.size) / 1024 / 1024).toFixed(1)} MB\nSHA256: ${details.sha256.slice(0, 16)}…\n\nWritten to your home directory only, no root required.`
+  })
+  await daemon.request({
+    op: 'set_helper_consent',
+    host_id: host.host_id,
+    allow: response === 0
   })
 }
 
