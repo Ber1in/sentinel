@@ -8,6 +8,7 @@ members = [
     "crates/terminal",
     "crates/store",
     "crates/helper",
+    "crates/helper-proto",
     "crates/sftp",
 ]
 
@@ -32,6 +33,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 keyring = { version = "3", features = ["windows-native"] }
 
 protocol = { path = "crates/protocol" }
+helper-proto = { path = "crates/helper-proto" }
 daemon = { path = "crates/daemon" }
 ssh = { path = "crates/ssh" }
 persistence = { path = "crates/persistence" }

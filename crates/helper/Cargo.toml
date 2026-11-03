@@ -9,6 +9,7 @@ name = "sentinel-helper"
 path = "src/main.rs"
 
 [dependencies]
+helper-proto = { path = "../helper-proto" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

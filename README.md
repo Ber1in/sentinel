@@ -96,7 +96,7 @@ cargo build --release --target x86_64-pc-windows-gnu -p daemon
 
 ## 许可
 
-MIT。
+MIT，见 [LICENSE](LICENSE)。Copyright (c) 2026 Ber1in。
 
 ## 桌面客户端
 
