@@ -421,6 +421,13 @@ impl Manager {
             }
         }
 
+        // Opt-in switch until first-connect deployment lands: the default stays tmux so
+        // existing sessions and behaviour are untouched.
+        let provider_kind = match std::env::var("SENTINEL_PROVIDER").as_deref() {
+            Ok("helper") => ProviderKind::Helper,
+            _ => ProviderKind::Tmux,
+        };
+
         let provider: Arc<dyn persistence::PersistenceProvider> = Arc::new(
             persistence::TmuxPersistence::new(persistence::TmuxOptions {
                 status: self.config.tmux.status,
@@ -449,6 +456,8 @@ impl Manager {
                 timeout: std::time::Duration::from_secs(15),
             },
             provider,
+            provider_kind,
+            client_id: self.namespace.clone(),
             cwd: cwd.clone(),
             scrollback_lines: self.config.scrollback_lines,
             spill_dir: None,

@@ -50,6 +50,10 @@ pub struct SessionSpec {
     pub pane_id: String,
     pub connect: ConnectOptions,
     pub provider: Arc<dyn PersistenceProvider>,
+    /// Transport that carries the pane.
+    pub provider_kind: protocol::ProviderKind,
+    /// Client identity used by the helper namespace.
+    pub client_id: String,
     pub cwd: Option<String>,
     pub scrollback_lines: usize,
     pub spill_dir: Option<PathBuf>,
@@ -278,71 +282,90 @@ async fn run_once(
         }
     };
 
-    let exec = RemoteExecOverSsh {
-        connection: connection.clone(),
-    };
-    let outcome = match spec
-        .provider
-        .ensure(&exec, session_name, spec.cwd.as_deref())
-        .await
-    {
-        Ok(outcome) => {
-            tracing::debug!(session = %spec.session_id, ?outcome, "persistence bound");
-            outcome
-        }
-        Err(PersistenceError::TmuxMissing) => {
-            return RunOutcome::Fatal("tmux is not installed on the host".into())
-        }
-        Err(error) => {
-            tracing::warn!(session = %spec.session_id, %error, "ensure failed");
-            return RunOutcome::Retry(error.to_string());
-        }
-    };
-
-    // Replay remote history before attaching so a reconnecting GUI sees what it missed.
-    if outcome == EnsureOutcome::Attached {
-        if let Ok(snapshot) = spec
-            .provider
-            .snapshot(&exec, session_name, REPLAY_LINES)
-            .await
-        {
-            if !snapshot.is_empty() {
-                // The remote screen is authoritative after a reattach: clear the client
-                // view first so the snapshot does not stack on top of stale content.
-                let mut replay = b"\x1b[2J\x1b[H".to_vec();
-                replay.extend_from_slice(snapshot.as_bytes());
-                let seq = scrollback.lock().unwrap().append(&replay);
-                let _ = output.send(OutputChunk { seq, bytes: replay });
-            }
-        }
-    } else if outcome == EnsureOutcome::Recreated {
-        fsm.mark_recreated();
-        let _ = recreated_tx.send(true);
-    } else {
-        let _ = recreated_tx.send(false);
-    }
-
     let mut cwd_tracker = terminal::CwdTracker::new();
-    let channel = match connection
-        .open_pty_exec(
-            &spec
-                .provider
-                .attach_command(session_name, spec.cwd.as_deref()),
-            &spec.term,
-            spec.cols,
-            spec.rows,
-        )
-        .await
-    {
-        Ok(channel) => channel,
-        Err(error) => {
-            tracing::warn!(session = %spec.session_id, %error, "attach failed");
-            return RunOutcome::Retry(error.to_string());
-        }
-    };
-
     let mut channel: Box<dyn crate::pane_channel::PaneChannel> =
-        Box::new(crate::pane_channel::ExecPane::new(channel));
+        if spec.provider_kind == protocol::ProviderKind::Helper {
+            match crate::frame_pane::FramePane::open(
+                &connection,
+                &spec.client_id,
+                &spec.session_id,
+                spec.cwd.as_deref(),
+                spec.cols,
+                spec.rows,
+            )
+            .await
+            {
+                Ok(pane) => Box::new(pane),
+                Err(error) => {
+                    tracing::warn!(session = %spec.session_id, %error, "helper pane failed");
+                    return RunOutcome::Retry(error.to_string());
+                }
+            }
+        } else {
+            let exec = RemoteExecOverSsh {
+                connection: connection.clone(),
+            };
+            let outcome = match spec
+                .provider
+                .ensure(&exec, session_name, spec.cwd.as_deref())
+                .await
+            {
+                Ok(outcome) => {
+                    tracing::debug!(session = %spec.session_id, ?outcome, "persistence bound");
+                    outcome
+                }
+                Err(PersistenceError::TmuxMissing) => {
+                    return RunOutcome::Fatal("tmux is not installed on the host".into())
+                }
+                Err(error) => {
+                    tracing::warn!(session = %spec.session_id, %error, "ensure failed");
+                    return RunOutcome::Retry(error.to_string());
+                }
+            };
+
+            // Replay remote history before attaching so a reconnecting GUI sees what it missed.
+            if outcome == EnsureOutcome::Attached {
+                if let Ok(snapshot) = spec
+                    .provider
+                    .snapshot(&exec, session_name, REPLAY_LINES)
+                    .await
+                {
+                    if !snapshot.is_empty() {
+                        // The remote screen is authoritative after a reattach: clear the client
+                        // view first so the snapshot does not stack on top of stale content.
+                        let mut replay = b"\x1b[2J\x1b[H".to_vec();
+                        replay.extend_from_slice(snapshot.as_bytes());
+                        let seq = scrollback.lock().unwrap().append(&replay);
+                        let _ = output.send(OutputChunk { seq, bytes: replay });
+                    }
+                }
+            } else if outcome == EnsureOutcome::Recreated {
+                fsm.mark_recreated();
+                let _ = recreated_tx.send(true);
+            } else {
+                let _ = recreated_tx.send(false);
+            }
+
+            let exec_channel = match connection
+                .open_pty_exec(
+                    &spec
+                        .provider
+                        .attach_command(session_name, spec.cwd.as_deref()),
+                    &spec.term,
+                    spec.cols,
+                    spec.rows,
+                )
+                .await
+            {
+                Ok(channel) => channel,
+                Err(error) => {
+                    tracing::warn!(session = %spec.session_id, %error, "attach failed");
+                    return RunOutcome::Retry(error.to_string());
+                }
+            };
+
+            Box::new(crate::pane_channel::ExecPane::new(exec_channel))
+        };
     let _ = fsm.apply(Event::Connected);
     let _ = state_tx.send(fsm.state());
 

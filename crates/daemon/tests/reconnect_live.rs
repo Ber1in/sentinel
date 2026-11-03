@@ -39,6 +39,8 @@ fn spec(session_id: &str, socket: &str, spill: &std::path::Path) -> Option<Sessi
             keepalive: Keepalive::default(),
             timeout: Duration::from_secs(10),
         },
+        provider_kind: protocol::ProviderKind::Tmux,
+        client_id: "testns".into(),
         provider: Arc::new(TmuxPersistence::new(TmuxOptions {
             socket: socket.into(),
             ..TmuxOptions::default()
