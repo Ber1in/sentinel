@@ -34,6 +34,8 @@ export interface TerminalData {
 
 const api = {
   daemonStatus: (): Promise<DaemonStatus> => ipcRenderer.invoke('daemon:status'),
+  applyTitleBarTheme: (theme: 'dark' | 'light'): Promise<void> =>
+    ipcRenderer.invoke('theme:titlebar', theme),
   restartDaemon: (): Promise<{ ok: boolean; error: string | null }> =>
     ipcRenderer.invoke('daemon:restart'),
   listHosts: (): Promise<HostSummary[]> => ipcRenderer.invoke('hosts:list'),

@@ -254,6 +254,7 @@ export function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme
     localStorage.setItem('sentinel.theme', theme)
+    void window.desktop.applyTitleBarTheme(resolvedTheme)
   }, [resolvedTheme, theme])
 
   useEffect(() => {

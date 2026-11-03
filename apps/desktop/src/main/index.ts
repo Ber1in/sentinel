@@ -165,6 +165,19 @@ async function getClient(): Promise<DaemonClient> {
   return clientPromise
 }
 
+/** Match the native window-button strip to the active theme. */
+function applyTitleBarTheme(theme: 'dark' | 'light'): void {
+  const palette =
+    theme === 'light'
+      ? { color: '#f6f7f9', symbolColor: '#16181d' }
+      : { color: '#0b0d12', symbolColor: '#e6e8ee' }
+  try {
+    window?.setTitleBarOverlay({ ...palette, height: 40 })
+  } catch {
+    // Older Electron or non-Windows platforms: the overlay simply stays as-is.
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('daemon:status', async () => {
     try {
@@ -184,6 +197,10 @@ function registerIpc(): void {
       }
       return { connected: false, info: null, port: null, error: (error as Error).message, mismatch: null }
     }
+  })
+
+  ipcMain.handle('theme:titlebar', (_event, theme: 'dark' | 'light') => {
+    applyTitleBarTheme(theme)
   })
 
   ipcMain.handle('daemon:restart', async () => {
