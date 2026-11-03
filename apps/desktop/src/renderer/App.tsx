@@ -7,7 +7,20 @@ import type { SessionSummary } from '../shared/SessionSummary'
 import type { ProviderKind } from '../shared/ProviderKind'
 import type { Terminal } from '@xterm/xterm'
 import { TerminalPane } from './TerminalPane'
-import { SplitView, type SplitDirection } from './SplitView'
+import { SplitView } from './SplitView'
+import {
+  firstPane,
+  flatten,
+  leaf,
+  paneIds,
+  rebuild,
+  removeLeaf,
+  setRatio,
+  splitLeaf,
+  type LayoutNode,
+  type PersistedPane,
+  type SplitDirection
+} from './layout'
 import { detectLanguage, translator, type Language } from './i18n'
 
 type Theme = 'dark' | 'light'
@@ -25,7 +38,8 @@ interface PaneState {
 
 interface Tab {
   id: string
-  direction: SplitDirection
+  /** Nested split tree; leaves are pane ids. */
+  root: LayoutNode
   /** Pane that owns keyboard focus and is the target of "close pane". */
   activePaneId: string
   panes: PaneState[]
@@ -57,6 +71,7 @@ export function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [editing, setEditing] = useState<{ host: HostSummary; isNew: boolean } | null>(null)
+  const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
   const [daemonOnline, setDaemonOnline] = useState(true)
 
   /** Exactly one tab per session; duplicates would multiply every keystroke. */
@@ -92,37 +107,32 @@ export function App() {
         const layout = await window.desktop.loadLayout()
         if (cancelled || layout.tabs.length === 0) return
         const tabsLayout = layout.tabs as Array<{ id: string; title: string; sort_order: number }>
-        const panesLayout = layout.panes as Array<{
-          id: string
-          tab_id: string
-          direction: string | null
-          ratio: number
-          host_id: string | null
-          session_id: string | null
-          sort_order: number
-        }>
-        const built: Tab[] = tabsLayout.map((tab) => ({
-          id: tab.id,
-          direction: (panesLayout.find((pane) => pane.tab_id === tab.id)?.direction ??
-            'horizontal') as SplitDirection,
-          activePaneId:
-            panesLayout
-              .filter((pane) => pane.tab_id === tab.id)
-              .sort((a, b) => a.sort_order - b.sort_order)[0]?.id ?? 'main',
-          panes: panesLayout
-            .filter((pane) => pane.tab_id === tab.id)
+        const rows = layout.panes as unknown as PersistedPane[]
+        const built: Tab[] = []
+        for (const tab of tabsLayout) {
+          const rowsForTab = rows.filter((row) => row.tab_id === tab.id)
+          const root = rebuild(rowsForTab, tab.id)
+          if (!root) continue
+          const panes: PaneState[] = rowsForTab
+            .filter((row) => row.direction === null)
             .sort((a, b) => a.sort_order - b.sort_order)
-            .map((pane) => ({
-              id: pane.id,
-              ratio: pane.ratio,
-              hostId: pane.host_id ?? '',
-              sessionId: pane.session_id ?? '',
+            .map((row) => ({
+              id: row.id,
+              ratio: 1,
+              hostId: row.host_id ?? '',
+              sessionId: row.session_id ?? '',
               numeric: 0,
               title: tab.title,
               state: 'detached' as SessionState,
               provider: 'tmux' as ProviderKind
             }))
-        }))
+          built.push({
+            id: tab.id,
+            root,
+            activePaneId: firstPane(root),
+            panes
+          })
+        }
         setTabs((current) => (current.length > 0 ? current : built))
       } catch {
         // No saved layout yet.
@@ -168,20 +178,23 @@ export function App() {
   useEffect(() => {
     if (tabs.length === 0) return
     const timer = setTimeout(() => {
+      const panes: PersistedPane[] = []
+      tabs.forEach((tab) => {
+        flatten(
+          tab.root,
+          tab.id,
+          (paneId) => {
+            const pane = tab.panes.find((item) => item.id === paneId)
+            return pane ? { hostId: pane.hostId, sessionId: pane.sessionId } : undefined
+          },
+          null,
+          0,
+          panes
+        )
+      })
       void window.desktop.saveLayout(
         tabs.map((tab, index) => ({ id: tab.id, title: paneTitle(tab), sort_order: index })),
-        tabs.flatMap((tab) =>
-          tab.panes.map((pane, index) => ({
-            id: pane.id,
-            tab_id: tab.id,
-            parent_id: null,
-            direction: tab.direction,
-            ratio: pane.ratio,
-            host_id: pane.hostId || null,
-            session_id: pane.sessionId || null,
-            sort_order: index
-          }))
-        )
+        panes
       )
     }, 500)
     return () => clearTimeout(timer)
@@ -258,7 +271,7 @@ export function App() {
             .filter((session) => !known.has(session.session_id))
             .map((session) => ({
               id: session.session_id,
-              direction: 'horizontal' as SplitDirection,
+              root: leaf('main'),
               activePaneId: 'main',
               panes: [
                 {
@@ -293,7 +306,7 @@ export function App() {
     (session: SessionSummary) => {
       addTab({
         id: session.session_id,
-        direction: 'horizontal',
+        root: leaf('main'),
         activePaneId: 'main',
         panes: [
           {
@@ -411,7 +424,7 @@ export function App() {
         }
         addTab({
           id: reply.session_id,
-          direction: 'horizontal',
+          root: leaf(pane.id),
           activePaneId: pane.id,
           panes: [pane]
         })
@@ -441,12 +454,14 @@ export function App() {
       setTabs((current) =>
         current.map((item) => {
           if (item.id !== tab.id) return item
+          const root = removeLeaf(item.root, paneId)
+          if (!root) return item
           const panes = item.panes.filter((next) => next.id !== paneId)
           return {
             ...item,
+            root,
             panes,
-            activePaneId:
-              item.activePaneId === paneId ? panes[panes.length - 1]?.id ?? '' : item.activePaneId
+            activePaneId: item.activePaneId === paneId ? firstPane(root) : item.activePaneId
           }
         })
       )
@@ -457,7 +472,7 @@ export function App() {
   /** Split the active tab using the first pane's host. */
   const splitTab = useCallback(
     async (tab: Tab, direction: SplitDirection) => {
-      const source = paneOf(tab)
+      const source = tab.panes.find((pane) => pane.id === tab.activePaneId) ?? paneOf(tab)
       const host = hosts.find((item) => item.id === source.hostId)
       if (!host) {
         pushToast('host not found')
@@ -481,7 +496,7 @@ export function App() {
             item.id === tab.id
               ? {
                   ...item,
-                  direction,
+                  root: splitLeaf(item.root, item.activePaneId, paneId, direction),
                   activePaneId: paneId,
                   panes: [
                     ...item.panes.map((pane) => ({ ...pane, ratio: item.panes.length })),
@@ -639,6 +654,11 @@ export function App() {
               <div
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  setActiveTab(tab.id)
+                  setTabMenu({ tabId: tab.id, x: event.clientX, y: event.clientY })
+                }}
                 className={`group flex cursor-pointer items-center gap-2 border-r border-line px-3 text-[12px] transition ${
                   activeTab === tab.id ? 'bg-canvas text-ink' : 'bg-surface text-muted hover:text-ink'
                 }`}
@@ -705,23 +725,18 @@ export function App() {
                   style={{ display: activeTab === tab.id ? 'block' : 'none' }}
                 >
                   <SplitView
-                    direction={tab.direction}
-                    panes={tab.panes.map((pane) => ({ id: pane.id, ratio: pane.ratio, payload: pane }))}
-                    onRatioChange={(paneId, ratio) =>
+                    node={tab.root}
+                    onRatioChange={(splitId, ratio) =>
                       setTabs((current) =>
                         current.map((item) =>
-                          item.id === tab.id
-                            ? {
-                                ...item,
-                                panes: item.panes.map((pane) =>
-                                  pane.id === paneId ? { ...pane, ratio } : pane
-                                )
-                              }
-                            : item
+                          item.id === tab.id ? { ...item, root: setRatio(item.root, splitId, ratio) } : item
                         )
                       )
                     }
-                    renderPane={({ payload }) => (
+                    renderPane={(paneId) => {
+                      const payload = tab.panes.find((pane) => pane.id === paneId)
+                      if (!payload) return null
+                      return (
                       <div
                         className="group/pane relative h-full w-full"
                         onMouseDown={() =>
@@ -752,7 +767,8 @@ export function App() {
                           onReady={() => void window.desktop.resync(payload.sessionId)}
                         />
                       </div>
-                    )}
+                      )
+                    }}
                   />
                 </div>
               ))
@@ -762,6 +778,50 @@ export function App() {
           <StatusBar tabs={tabs} activeTab={activeTab} label={t} />
         </main>
       </div>
+
+      {tabMenu ? (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setTabMenu(null)} onContextMenu={() => setTabMenu(null)} />
+          <div
+            className="fixed z-30 w-[168px] rounded-lg border border-line bg-surface p-1 shadow-2xl"
+            style={{ left: tabMenu.x, top: tabMenu.y }}
+          >
+            <MenuItem
+              label={t('action.splitRight')}
+              onClick={() => {
+                const tab = tabs.find((item) => item.id === tabMenu.tabId)
+                setTabMenu(null)
+                if (tab) void splitTab(tab, 'horizontal')
+              }}
+            />
+            <MenuItem
+              label={t('action.splitDown')}
+              onClick={() => {
+                const tab = tabs.find((item) => item.id === tabMenu.tabId)
+                setTabMenu(null)
+                if (tab) void splitTab(tab, 'vertical')
+              }}
+            />
+            <div className="my-1 h-px bg-line" />
+            <MenuItem
+              label={t('action.closePane')}
+              onClick={() => {
+                const tab = tabs.find((item) => item.id === tabMenu.tabId)
+                setTabMenu(null)
+                if (tab) void closePane(tab, tab.activePaneId)
+              }}
+            />
+            <MenuItem
+              label={t('action.close')}
+              onClick={() => {
+                const tab = tabs.find((item) => item.id === tabMenu.tabId)
+                setTabMenu(null)
+                if (tab) void closeTab(tab)
+              }}
+            />
+          </div>
+        </>
+      ) : null}
 
       <QuickConnect
         open={dialogOpen}
@@ -844,6 +904,17 @@ function hostColor(id: string): string {
   let hash = 0
   for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) % 360
   return `hsl(${hash} 65% 58%)`
+}
+
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full rounded px-2.5 py-1.5 text-left text-[12px] text-ink transition hover:bg-elevated"
+    >
+      {label}
+    </button>
+  )
 }
 
 function stateColor(state: SessionState): string {
@@ -951,7 +1022,7 @@ function QuickConnect(props: {
       )
       onDone({
         id: reply.session_id,
-        direction: 'horizontal',
+        root: leaf('main'),
         activePaneId: 'main',
         panes: [
           {
