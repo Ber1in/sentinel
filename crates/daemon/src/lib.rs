@@ -6,6 +6,7 @@ pub mod credentials;
 pub mod deploy;
 pub mod frame_pane;
 pub mod fsm;
+#[cfg(unix)]
 pub mod helper_transport;
 pub mod input;
 pub mod instance;
@@ -21,7 +22,6 @@ pub use client_id::{load_or_create, ClientIdentity};
 pub use config::Config;
 pub use credentials::{credential_id, MemoryStore, SecretStore};
 pub use fsm::{Event, ReconnectPolicy, SessionFsm};
-pub use helper_transport::HelperTransport;
 pub use input::InputQueue;
 pub use instance::SingleInstance;
 pub use manager::{Manager, RoutedChunk, StateChange};

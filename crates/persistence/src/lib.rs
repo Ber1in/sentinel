@@ -8,6 +8,7 @@
 use async_trait::async_trait;
 use protocol::ProviderKind;
 
+#[cfg(unix)]
 pub mod helper_client;
 pub mod none;
 pub mod tmux;
