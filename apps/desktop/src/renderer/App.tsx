@@ -1406,7 +1406,6 @@ function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
   const [password, setPassword] = useState('')
   const [reveal, setReveal] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!state) return
@@ -1422,7 +1421,6 @@ function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
     setKeyPath(auth.method === 'key' ? auth.key_path : '')
     setPassword('')
     setReveal(false)
-    setConfirmDelete(false)
   }, [state])
 
   const host = state.host
@@ -1476,10 +1474,7 @@ function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
   }
 
   const remove = async (): Promise<void> => {
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      return
-    }
+    if (!window.confirm(t('host.deleteConfirm'))) return
     setBusy(true)
     try {
       await window.desktop.deleteHost(host.id)
@@ -1574,7 +1569,7 @@ function HostDialogInner(props: HostDialogProps & { state: HostDialogState }) {
                     disabled={busy}
                     className="rounded-lg px-2.5 py-1.5 text-[12px] text-danger transition hover:bg-elevated"
                   >
-                    {confirmDelete ? t('host.deleteConfirm') : t('action.delete')}
+                    {t('action.delete')}
                   </button>
                 ) : null}
                 {!state.isNew ? (

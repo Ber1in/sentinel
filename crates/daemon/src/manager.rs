@@ -178,6 +178,16 @@ impl Manager {
             }
         }
 
+        // Forget the install consent too: re-adding the host must ask again.
+        {
+            let mut consents = self.consents.lock().unwrap();
+            if consents.remove(host_id).is_some() {
+                if let Ok(json) = serde_json::to_string_pretty(&*consents) {
+                    let _ = std::fs::write(&self.consent_path, json);
+                }
+            }
+        }
+
         self.store
             .lock()
             .unwrap()
