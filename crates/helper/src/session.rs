@@ -30,7 +30,9 @@ pub const MAX_DATA_BODY: usize = 32 * 1024;
 pub const DEFAULT_REPLAY_LINES: usize = 2_000;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Settings shared by every session a daemon creates.
@@ -62,15 +64,20 @@ impl Default for SessionConfig {
 
 impl SessionConfig {
     /// Read the optional environment overrides used by the daemon.
+    ///
+    /// - `SHELL` – shell to run (default `/bin/sh`).
+    /// - `SENTINEL_HELPER_LOGIN_SHELL` – `0`/`false` runs the shell without `-l`.
+    /// - `SENTINEL_HELPER_RING_LINES` – scrollback lines (default 100k, `0` disables).
+    /// - `SENTINEL_HELPER_RING_BYTES` – scrollback byte budget (default 16 MiB).
+    /// - `SENTINEL_HELPER_REPLAY_LINES` – lines replayed on attach (default 2000).
     pub fn from_env() -> Self {
         let default = Self::default();
         Self {
             shell: default.shell,
-            login_shell: default.login_shell,
+            login_shell: env_bool("SENTINEL_HELPER_LOGIN_SHELL").unwrap_or(default.login_shell),
             ring_lines: env_usize("SENTINEL_HELPER_RING_LINES").unwrap_or(default.ring_lines),
             ring_bytes: env_usize("SENTINEL_HELPER_RING_BYTES").unwrap_or(default.ring_bytes),
-            replay_lines: env_usize("SENTINEL_HELPER_REPLAY_LINES")
-                .unwrap_or(default.replay_lines),
+            replay_lines: env_usize("SENTINEL_HELPER_REPLAY_LINES").unwrap_or(default.replay_lines),
         }
     }
 
@@ -96,6 +103,16 @@ fn default_shell() -> PathBuf {
 
 fn env_usize(key: &str) -> Option<usize> {
     std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn env_bool(key: &str) -> Option<bool> {
+    let value = std::env::var(key).ok()?;
+    let value = value.trim().to_ascii_lowercase();
+    match value.as_str() {
+        "1" | "true" | "yes" => Some(true),
+        "0" | "false" | "no" => Some(false),
+        _ => None,
+    }
 }
 
 fn terminal_type() -> String {
@@ -205,13 +222,13 @@ impl Session {
 
         let reader = Arc::clone(&session);
         let master_reader = session.master.try_clone()?;
-        std::thread::Builder::new()
+        if let Err(err) = std::thread::Builder::new()
             .name(format!("session-{session_id}"))
             .spawn(move || reader.read_loop(master_reader))
-            .map_err(|err| {
-                let _ = session.destroy();
-                err
-            })?;
+        {
+            let _ = session.destroy();
+            return Err(err);
+        }
         Ok(session)
     }
 
@@ -332,13 +349,13 @@ impl Session {
             let already_exited = self.exited.load(Ordering::SeqCst);
             if !already_exited && child.try_wait()?.is_none() {
                 // `pid` is the session/process-group leader (`setsid` in pre_exec).
-                unsafe {
-                    libc::killpg(pid, libc::SIGTERM);
-                }
+                // Job-control shells put jobs in their own process groups, so also
+                // sweep every process that still belongs to this session. Both are
+                // safe while the leader has not been reaped: its pid cannot be
+                // recycled before that.
+                signal_session(pid, libc::SIGTERM);
                 if !wait_timeout(&mut child, Duration::from_millis(500))? {
-                    unsafe {
-                        libc::killpg(pid, libc::SIGKILL);
-                    }
+                    signal_session(pid, libc::SIGKILL);
                     let _ = wait_timeout(&mut child, Duration::from_secs(2))?;
                 }
             }
@@ -459,6 +476,59 @@ impl Handle for Session {
     }
 }
 
+/// Signal the session leader's process group and every process still in the
+/// session (job-control shells give each job its own group).
+fn signal_session(session_id: libc::pid_t, signal: libc::c_int) {
+    unsafe {
+        libc::killpg(session_id, signal);
+    }
+    for pid in session_members(session_id) {
+        if pid == std::process::id() as libc::pid_t {
+            continue;
+        }
+        unsafe {
+            libc::kill(pid, signal);
+        }
+    }
+}
+
+/// PIDs whose kernel session id is `session_id`, excluding the leader itself.
+///
+/// Reads `/proc/<pid>/stat`; field 6 is the session id. The comm field is
+/// parenthesised and may contain spaces, so parsing starts after the last `)`.
+fn session_members(session_id: libc::pid_t) -> Vec<libc::pid_t> {
+    let mut members = Vec::new();
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return members;
+    };
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<libc::pid_t>().ok())
+        else {
+            continue;
+        };
+        if pid == session_id {
+            continue;
+        }
+        let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+            continue;
+        };
+        let Some(rest) = stat.rsplit(')').next() else {
+            continue;
+        };
+        let mut fields = rest.split_whitespace();
+        let _state = fields.next();
+        let _ppid = fields.next();
+        let _pgrp = fields.next();
+        if fields.next().and_then(|value| value.parse::<i32>().ok()) == Some(session_id) {
+            members.push(pid);
+        }
+    }
+    members
+}
+
 fn wait_timeout(child: &mut Child, timeout: Duration) -> io::Result<bool> {
     let deadline = Instant::now() + timeout;
     loop {
@@ -518,10 +588,12 @@ mod tests {
     use crate::wire::read_frame;
     use std::os::unix::net::UnixStream;
 
+    type FrameLog = Arc<Mutex<Vec<(Message, Vec<u8>)>>>;
+
     /// Collects frames read from a socket on a background thread so tests can
     /// poll for text without putting timeouts on a partially-consumed frame.
     struct FrameSink {
-        frames: Arc<Mutex<Vec<(Message, Vec<u8>)>>>,
+        frames: FrameLog,
     }
 
     impl FrameSink {
@@ -632,10 +704,13 @@ mod tests {
     fn spawn_honours_the_initial_cwd() {
         let config = SessionConfig::for_tests();
         let dir = tempfile::tempdir().unwrap();
-        let session =
-            Session::spawn("c", "s", Some(dir.path()), 80, 24, &config).unwrap();
+        let session = Session::spawn("c", "s", Some(dir.path()), 80, 24, &config).unwrap();
         session.write(b"pwd\n").unwrap();
-        let text = wait_for_text(&session, dir.path().to_str().unwrap(), Duration::from_secs(10));
+        let text = wait_for_text(
+            &session,
+            dir.path().to_str().unwrap(),
+            Duration::from_secs(10),
+        );
         assert!(text.contains(dir.path().to_str().unwrap()));
         session.destroy().unwrap();
     }
@@ -666,19 +741,24 @@ mod tests {
         let (server, client) = UnixStream::pair().unwrap();
         let sink = FrameSink::spawn(server);
         let out = Arc::new(ConnectionOut::new(client));
-        session.attach(Arc::clone(&out), config.replay_lines).unwrap();
+        session
+            .attach(Arc::clone(&out), config.replay_lines)
+            .unwrap();
         assert_eq!(session.subscriber_count(), 1);
 
         session.detach(&out);
         assert_eq!(session.subscriber_count(), 0);
         assert!(session.is_alive());
 
-        let frames_before = sink.data_seqs().len();
         session.write(b"echo after-detach\n").unwrap();
         wait_for_text(&session, "after-detach", Duration::from_secs(10));
         // The detached client must not receive the new output.
-        std::thread::sleep(Duration::from_millis(100));
-        assert_eq!(sink.data_seqs().len(), frames_before);
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !sink.text().contains("after-detach"),
+            "detached client still received output: {:?}",
+            sink.text()
+        );
         assert!(session.is_alive());
         session.destroy().unwrap();
     }
@@ -691,13 +771,18 @@ mod tests {
 
         // The pty echoes the command too; only the printed line parses.
         let deadline = Instant::now() + Duration::from_secs(10);
-        let pid = loop {
+        let pid: u32 = loop {
             let text = String::from_utf8_lossy(&session.snapshot(usize::MAX)).into_owned();
-            if let Some(pid) = text
-                .lines()
-                .filter_map(|line| line.trim().strip_prefix("PID="))
-                .find_map(|value| value.trim().parse::<u32>().ok())
-            {
+            if let Some(pid) = text.lines().find_map(|line| {
+                // The prompt prefixes the printed line, so look for the marker.
+                let value = line.split("PID=").nth(1)?;
+                let digits: String = value.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if digits.is_empty() {
+                    None
+                } else {
+                    digits.parse().ok()
+                }
+            }) {
                 break pid;
             }
             assert!(Instant::now() < deadline, "no pid in output: {text:?}");
@@ -764,6 +849,52 @@ mod tests {
         }
         assert!(!session.is_alive());
         session.destroy().unwrap();
+    }
+
+    #[test]
+    fn destroy_kills_the_whole_process_group() {
+        let config = SessionConfig::for_tests();
+        let session = session(&config);
+        // A background child stays in the shell's process group, so killpg must
+        // take it down as well.
+        session
+            .write(b"sleep 300 & printf 'CHILD=%s\\n' \"$!\"\n")
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let child_pid: u32 = loop {
+            let text = String::from_utf8_lossy(&session.snapshot(usize::MAX)).into_owned();
+            if let Some(pid) = text.lines().find_map(|line| {
+                let value = line.split("CHILD=").nth(1)?;
+                let digits: String = value.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if digits.is_empty() {
+                    None
+                } else {
+                    digits.parse().ok()
+                }
+            }) {
+                break pid;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "no background pid in output: {text:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(
+            Path::new(&format!("/proc/{child_pid}")).exists(),
+            "background process should be running"
+        );
+
+        session.destroy().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Path::new(&format!("/proc/{child_pid}")).exists() {
+            assert!(
+                Instant::now() < deadline,
+                "background process {child_pid} survived killpg"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
     }
 
     #[test]

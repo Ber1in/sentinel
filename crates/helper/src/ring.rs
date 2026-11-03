@@ -145,7 +145,10 @@ mod tests {
             ring.push(format!("line {i}\n").as_bytes());
         }
         assert_eq!(ring.line_count(), 5);
-        assert_eq!(ring.replay(10), b"line 15\nline 16\nline 17\nline 18\nline 19\n");
+        assert_eq!(
+            ring.replay(10),
+            b"line 15\nline 16\nline 17\nline 18\nline 19\n"
+        );
     }
 
     #[test]
@@ -156,7 +159,13 @@ mod tests {
         }
         assert_eq!(ring.replay(3), b"7\n8\n9\n");
         assert_eq!(ring.replay(0), b"");
-        assert_eq!(ring.replay(1_000), (0..10).map(|i| format!("{i}\n")).collect::<String>().as_bytes());
+        assert_eq!(
+            ring.replay(1_000),
+            (0..10)
+                .map(|i| format!("{i}\n"))
+                .collect::<String>()
+                .as_bytes()
+        );
     }
 
     #[test]

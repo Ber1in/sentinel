@@ -13,6 +13,19 @@
 //! frames while a request is outstanding instead of assuming the reply comes
 //! first.
 //!
+//! Other details a client should know:
+//! - `reply.id` is a per-connection counter; the request messages carry no id.
+//! - Inbound `data` frames are fire-and-forget: a `reply` is only sent when the
+//!   write fails (or the frame is malformed).
+//! - The first `client_id` seen on a connection binds its namespace; a later
+//!   frame naming a different client is rejected.
+//! - A session that exits emits `event { what: "exit", detail: "<code>" }` to
+//!   attached clients; `destroy` emits `what: "destroyed"`.
+//!
+//! Environment overrides: `SENTINEL_HELPER_SOCKET`, `SENTINEL_HELPER_LOCK`,
+//! `SENTINEL_HELPER_IDLE_SECS`, `SENTINEL_HELPER_MAX_SESSIONS`, plus the
+//! session settings documented on `SessionConfig::from_env`.
+//!
 //! Idle shutdown: when there is no session and no connected client for
 //! `idle_timeout` (default 30 minutes, `SENTINEL_HELPER_IDLE_SECS` override) the
 //! daemon exits and removes its socket.
@@ -44,7 +57,9 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Everything `serve` needs to start.
@@ -69,8 +84,7 @@ impl ServerConfig {
             socket: paths::socket_path(),
             lock: paths::lock_path(),
             idle_timeout: Duration::from_secs(
-                env_u64("SENTINEL_HELPER_IDLE_SECS")
-                    .unwrap_or(DEFAULT_IDLE_TIMEOUT.as_secs()),
+                env_u64("SENTINEL_HELPER_IDLE_SECS").unwrap_or(DEFAULT_IDLE_TIMEOUT.as_secs()),
             ),
             max_sessions: env_u64("SENTINEL_HELPER_MAX_SESSIONS")
                 .map(|value| value as usize)
@@ -125,10 +139,14 @@ pub fn run() -> Result<(), ServeError> {
 /// Run the daemon until it is signalled or goes idle.
 pub fn run_with(config: ServerConfig) -> Result<(), ServeError> {
     let _instance = SingleInstance::acquire(&config.lock)?;
-    install_signal_handlers();
     SHUTDOWN.store(false, Ordering::SeqCst);
+    install_signal_handlers();
 
-    if let Some(parent) = config.socket.parent() {
+    if let Some(parent) = config
+        .socket
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+    {
         paths::ensure_private_dir(parent)?;
     }
     // A stale socket from a crashed daemon is expected; we hold the lock, so no
@@ -181,7 +199,10 @@ pub fn run_with(config: ServerConfig) -> Result<(), ServeError> {
             }
         }
 
-        context.registry.prune();
+        if context.registry.prune() > 0 {
+            // The idle clock starts when the last session goes away.
+            context.touch();
+        }
 
         if SHUTDOWN.load(Ordering::SeqCst) {
             eprintln!("shutdown signal received");
@@ -219,7 +240,7 @@ struct SingleInstance {
 
 impl SingleInstance {
     fn acquire(path: &Path) -> Result<Self, ServeError> {
-        if let Some(parent) = path.parent() {
+        if let Some(parent) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
             paths::ensure_private_dir(parent)?;
         }
         let file = OpenOptions::new()
@@ -229,6 +250,7 @@ impl SingleInstance {
             .truncate(false)
             .mode(0o600)
             .open(path)?;
+        let _ = paths::restrict_file(path);
         let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
         if result != 0 {
             let err = io::Error::last_os_error();
@@ -287,25 +309,29 @@ impl Context {
 
     fn handle_connection(&self, stream: UnixStream) -> io::Result<()> {
         let out = Arc::new(ConnectionOut::new(stream.try_clone()?));
-        let mut handler = Handler::new(
-            Arc::clone(&self.registry),
-            Arc::clone(&self.config),
-            out,
-        );
+        let mut handler = Handler::new(Arc::clone(&self.registry), Arc::clone(&self.config), out);
         let mut reader = BufReader::new(stream);
+        let mut result = Ok(());
         loop {
             match wire::read_frame(&mut reader) {
                 Ok(None) => break,
-                Ok(Some((message, body))) => {
-                    if !handler.handle(&message, &body)? {
+                Ok(Some((message, body))) => match handler.handle(&message, &body) {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(err) => {
+                        result = Err(err);
                         break;
                     }
+                },
+                Err(err) => {
+                    result = Err(err);
+                    break;
                 }
-                Err(err) => return Err(err),
             }
         }
+        // Always drop this connection's subscriptions, even on a read error.
         handler.shutdown();
-        Ok(())
+        result
     }
 }
 
@@ -533,10 +559,7 @@ impl Handler {
         match session.attach(Arc::clone(&self.out), replay) {
             Ok(bytes) => {
                 self.attached.insert(session_id.to_string(), session);
-                self.reply(
-                    true,
-                    Some(format!("{{\"replayed_bytes\":{bytes}}}")),
-                )?;
+                self.reply(true, Some(format!("{{\"replayed_bytes\":{bytes}}}")))?;
             }
             Err(err) => self.reply_err(format!("attach failed: {err}"))?,
         }
@@ -573,14 +596,23 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::time::Duration;
 
-    /// In-process client: sends frames and reads replies synchronously.
+    /// In-process client. Requests are fed straight to a [`Handler`]; everything
+    /// the handler writes is read back from the other end of a socket pair.
     struct Peer {
         socket: UnixStream,
     }
 
     impl Peer {
-        fn send(&mut self, message: &Message, body: &[u8]) {
-            wire::write_frame(&mut self.socket, message, body).unwrap();
+        fn new(socket: UnixStream) -> Self {
+            socket
+                .set_read_timeout(Some(Duration::from_secs(20)))
+                .unwrap();
+            Self { socket }
+        }
+
+        fn send(&mut self, handler: &mut Handler, message: &Message, body: &[u8]) {
+            let keep_open = handler.handle(message, body).unwrap();
+            assert!(keep_open, "handler unexpectedly closed the connection");
         }
 
         /// Read frames until a `reply` arrives, collecting any `data` bodies.
@@ -621,8 +653,7 @@ mod tests {
                 match wire::read_frame(&mut self.socket) {
                     Ok(Some((Message::Data { .. }, body))) => {
                         collected.extend_from_slice(&body);
-                        let text = String::from_utf8_lossy(&collected);
-                        if text.contains(needle) {
+                        if String::from_utf8_lossy(&collected).contains(needle) {
                             return;
                         }
                     }
@@ -637,39 +668,115 @@ mod tests {
                 );
             }
         }
+
+        /// Read frames until `what` shows up in an `event`.
+        fn read_event(&mut self, what: &str) {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                match wire::read_frame(&mut self.socket) {
+                    Ok(Some((Message::Event { what: name, .. }, _))) if name == what => return,
+                    Ok(Some(_)) => {}
+                    Ok(None) => panic!("connection closed while waiting for event {what:?}"),
+                    Err(err) => panic!("read failed: {err}"),
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "timed out waiting for event {what:?}"
+                );
+            }
+        }
     }
 
     fn handler_pair(config: ServerConfig) -> (Handler, Peer, Arc<Registry<Session>>) {
         let registry = Arc::new(Registry::new(config.max_sessions));
+        let (handler, peer) = peer_with(&registry, config);
+        (handler, peer, registry)
+    }
+
+    fn peer_with(registry: &Arc<Registry<Session>>, config: ServerConfig) -> (Handler, Peer) {
         let (server, client) = UnixStream::pair().unwrap();
-        client
-            .set_read_timeout(Some(Duration::from_secs(20)))
-            .unwrap();
         let out = Arc::new(ConnectionOut::new(server));
-        let handler = Handler::new(Arc::clone(&registry), Arc::new(config), out);
-        (handler, Peer { socket: client }, registry)
+        (
+            Handler::new(Arc::clone(registry), Arc::new(config), out),
+            Peer::new(client),
+        )
     }
 
     fn test_config() -> ServerConfig {
         ServerConfig::for_tests(PathBuf::from("/tmp/unused-helper-test.sock"))
     }
 
-    fn hello(peer: &mut Peer, client_id: &str) {
-        peer.send(
-            &Message::Hello {
-                client_id: client_id.into(),
-                version: "0.1.0".into(),
-            },
-            b"",
-        );
+    fn bind_hello(handler: &mut Handler, peer: &mut Peer, client_id: &str) {
+        let message = Message::Hello {
+            client_id: client_id.into(),
+            version: "0.1.0".into(),
+        };
+        peer.send(handler, &message, b"");
         let detail = peer.reply_ok().unwrap_or_default();
-        assert!(detail.contains("helper"), "unexpected hello detail: {detail}");
+        assert!(
+            detail.contains("helper"),
+            "unexpected hello detail: {detail}"
+        );
+    }
+
+    fn create_session(
+        handler: &mut Handler,
+        peer: &mut Peer,
+        client_id: &str,
+        session_id: &str,
+    ) -> SessionSummary {
+        let message = Message::Create {
+            client_id: client_id.into(),
+            session_id: session_id.into(),
+            cwd: None,
+            cols: 80,
+            rows: 24,
+        };
+        peer.send(handler, &message, b"");
+        let detail = peer.reply_ok().unwrap();
+        serde_json::from_str(&detail).unwrap()
+    }
+
+    fn attach(
+        handler: &mut Handler,
+        peer: &mut Peer,
+        client_id: &str,
+        session_id: &str,
+    ) -> Vec<u8> {
+        let message = Message::Attach {
+            client_id: client_id.into(),
+            session_id: session_id.into(),
+        };
+        peer.send(handler, &message, b"");
+        let mut collected = Vec::new();
+        let (ok, detail) = peer.read_until_reply(&mut collected);
+        assert!(ok, "attach failed: {detail:?}");
+        collected
+    }
+
+    fn input(handler: &mut Handler, peer: &mut Peer, session_id: &str, payload: &[u8]) {
+        let message = Message::Data {
+            session_id: session_id.into(),
+            seq: 0,
+            len: payload.len() as u32,
+        };
+        peer.send(handler, &message, payload);
+    }
+
+    fn destroy(handler: &mut Handler, peer: &mut Peer, client_id: &str, session_id: &str) {
+        let message = Message::Destroy {
+            client_id: client_id.into(),
+            session_id: session_id.into(),
+        };
+        peer.send(handler, &message, b"");
+        peer.reply_ok();
     }
 
     #[test]
     fn hello_reports_the_helper_version() {
-        let (_handler, mut peer, _registry) = handler_pair(test_config());
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
         peer.send(
+            &mut handler,
             &Message::Hello {
                 client_id: "alice".into(),
                 version: "0.1.0".into(),
@@ -683,8 +790,9 @@ mod tests {
 
     #[test]
     fn empty_client_id_is_rejected() {
-        let (_handler, mut peer, _registry) = handler_pair(test_config());
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
         peer.send(
+            &mut handler,
             &Message::Hello {
                 client_id: "".into(),
                 version: "0.1.0".into(),
@@ -696,16 +804,10 @@ mod tests {
 
     #[test]
     fn a_connection_cannot_switch_namespaces() {
-        let (_handler, mut peer, _registry) = handler_pair(test_config());
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
         peer.send(
-            &Message::Hello {
-                client_id: "alice".into(),
-                version: "0.1.0".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
-        peer.send(
+            &mut handler,
             &Message::List {
                 client_id: "bob".into(),
             },
@@ -717,8 +819,9 @@ mod tests {
 
     #[test]
     fn input_before_any_identity_is_rejected() {
-        let (_handler, mut peer, _registry) = handler_pair(test_config());
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
         peer.send(
+            &mut handler,
             &Message::Data {
                 session_id: "s1".into(),
                 seq: 1,
@@ -731,36 +834,17 @@ mod tests {
 
     #[test]
     fn create_attach_and_destroy_roundtrip() {
-        let (mut _handler, mut peer, registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
+        let (mut handler, mut peer, registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
 
-        peer.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "sess-1".into(),
-                cwd: None,
-                cols: 100,
-                rows: 30,
-            },
-            b"",
-        );
-        let detail = peer.reply_ok().unwrap();
-        let summary: SessionSummary = serde_json::from_str(&detail).unwrap();
+        let summary = create_session(&mut handler, &mut peer, "alice", "sess-1");
         assert_eq!(summary.session_id, "sess-1");
-        assert_eq!(summary.cols, 100);
-        assert_eq!(summary.rows, 30);
+        assert_eq!(summary.cols, 80);
+        assert_eq!(summary.rows, 24);
         assert!(summary.alive);
         let pid = summary.pid;
 
-        let command = b"echo HELLO\n";
-        peer.send(
-            &Message::Data {
-                session_id: "sess-1".into(),
-                seq: 1,
-                len: command.len() as u32,
-            },
-            command,
-        );
+        input(&mut handler, &mut peer, "sess-1", b"echo HELLO\n");
         // Wait for the shell to echo, then attach: the replay must contain it.
         let session = registry.get("alice", "sess-1").unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -768,34 +852,19 @@ mod tests {
             assert!(Instant::now() < deadline, "shell produced no output");
             thread::sleep(Duration::from_millis(20));
         }
-        peer.send(
-            &Message::Attach {
-                client_id: "alice".into(),
-                session_id: "sess-1".into(),
-            },
-            b"",
-        );
-        let mut collected = Vec::new();
-        let (ok, detail) = peer.read_until_reply(&mut collected);
-        assert!(ok, "attach failed: {detail:?}");
+
+        let replay = attach(&mut handler, &mut peer, "alice", "sess-1");
         assert!(
-            String::from_utf8_lossy(&collected).contains("HELLO"),
+            String::from_utf8_lossy(&replay).contains("HELLO"),
             "replay before reply was empty: {:?}",
-            String::from_utf8_lossy(&collected)
+            String::from_utf8_lossy(&replay)
         );
 
-        let command = b"echo LIVE\n";
-        peer.send(
-            &Message::Data {
-                session_id: "sess-1".into(),
-                seq: 2,
-                len: command.len() as u32,
-            },
-            command,
-        );
+        input(&mut handler, &mut peer, "sess-1", b"echo LIVE\n");
         peer.read_data_until("LIVE");
 
         peer.send(
+            &mut handler,
             &Message::Resize {
                 client_id: "alice".into(),
                 session_id: "sess-1".into(),
@@ -807,39 +876,26 @@ mod tests {
         assert_eq!(peer.reply_ok().as_deref(), Some("120x40"));
         assert_eq!(registry.list("alice")[0].cols, 120);
 
-        peer.send(
-            &Message::Destroy {
-                client_id: "alice".into(),
-                session_id: "sess-1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
+        destroy(&mut handler, &mut peer, "alice", "sess-1");
         assert!(registry.is_empty());
         let deadline = Instant::now() + Duration::from_secs(5);
         while Path::new(&format!("/proc/{pid}")).exists() {
-            assert!(Instant::now() < deadline, "session process survived destroy");
+            assert!(
+                Instant::now() < deadline,
+                "session process survived destroy"
+            );
             thread::sleep(Duration::from_millis(20));
         }
     }
 
     #[test]
     fn list_only_returns_the_callers_sessions() {
-        let (mut _handler, mut alice, registry) = handler_pair(test_config());
-        hello(&mut alice, "alice");
-        alice.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "alice-1".into(),
-                cwd: None,
-                cols: 80,
-                rows: 24,
-            },
-            b"",
-        );
-        alice.reply_ok();
+        let (mut handler, mut alice, registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut alice, "alice");
+        create_session(&mut handler, &mut alice, "alice", "alice-1");
 
         alice.send(
+            &mut handler,
             &Message::List {
                 client_id: "alice".into(),
             },
@@ -851,28 +907,20 @@ mod tests {
         assert_eq!(summaries[0].session_id, "alice-1");
 
         // Bob talks to the same registry on a separate connection.
-        let (server, client) = UnixStream::pair().unwrap();
-        client
-            .set_read_timeout(Some(Duration::from_secs(20)))
-            .unwrap();
-        let mut bob = Peer { socket: client };
-        let mut bob_handler = Handler::new(
-            Arc::clone(&registry),
-            Arc::new(test_config()),
-            Arc::new(ConnectionOut::new(server)),
-        );
-        hello(&mut bob, "bob");
+        let (mut bob_handler, mut bob) = peer_with(&registry, test_config());
+        bind_hello(&mut bob_handler, &mut bob, "bob");
         bob.send(
+            &mut bob_handler,
             &Message::List {
                 client_id: "bob".into(),
             },
             b"",
         );
-        let detail = bob.reply_ok().unwrap();
-        assert_eq!(detail, "[]");
+        assert_eq!(bob.reply_ok().unwrap(), "[]");
 
         // Bob may not attach to Alice's session.
         bob.send(
+            &mut bob_handler,
             &Message::Attach {
                 client_id: "bob".into(),
                 session_id: "alice-1".into(),
@@ -885,43 +933,18 @@ mod tests {
             "unexpected detail: {detail}"
         );
 
-        // Alice still can.
-        alice.send(
-            &Message::Destroy {
-                client_id: "alice".into(),
-                session_id: "alice-1".into(),
-            },
-            b"",
-        );
-        alice.reply_ok();
+        destroy(&mut handler, &mut alice, "alice", "alice-1");
     }
 
     #[test]
     fn detach_keeps_the_session_alive_and_reattach_works() {
-        let (mut _handler, mut peer, registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
-        peer.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-                cwd: None,
-                cols: 80,
-                rows: 24,
-            },
-            b"",
-        );
-        peer.reply_ok();
+        let (mut handler, mut peer, registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
 
+        attach(&mut handler, &mut peer, "alice", "s1");
         peer.send(
-            &Message::Attach {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
-
-        peer.send(
+            &mut handler,
             &Message::Detach {
                 client_id: "alice".into(),
                 session_id: "s1".into(),
@@ -933,31 +956,35 @@ mod tests {
         assert!(session.is_alive());
         assert_eq!(session.subscriber_count(), 0);
 
-        peer.send(
-            &Message::Attach {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
+        attach(&mut handler, &mut peer, "alice", "s1");
         assert_eq!(session.subscriber_count(), 1);
 
+        destroy(&mut handler, &mut peer, "alice", "s1");
+    }
+
+    #[test]
+    fn detach_before_attach_is_a_no_op() {
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
         peer.send(
-            &Message::Destroy {
+            &mut handler,
+            &Message::Detach {
                 client_id: "alice".into(),
                 session_id: "s1".into(),
             },
             b"",
         );
         peer.reply_ok();
+        destroy(&mut handler, &mut peer, "alice", "s1");
     }
 
     #[test]
     fn unknown_sessions_report_not_found() {
-        let (mut _handler, mut peer, _registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
         peer.send(
+            &mut handler,
             &Message::Attach {
                 client_id: "alice".into(),
                 session_id: "missing".into(),
@@ -966,6 +993,7 @@ mod tests {
         );
         assert!(peer.reply_err().contains("not found"));
         peer.send(
+            &mut handler,
             &Message::Destroy {
                 client_id: "alice".into(),
                 session_id: "missing".into(),
@@ -979,21 +1007,12 @@ mod tests {
     fn session_limit_is_reported() {
         let mut config = test_config();
         config.max_sessions = 1;
-        let (mut _handler, mut peer, _registry) = handler_pair(config);
-        hello(&mut peer, "alice");
-        peer.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-                cwd: None,
-                cols: 80,
-                rows: 24,
-            },
-            b"",
-        );
-        peer.reply_ok();
+        let (mut handler, mut peer, registry) = handler_pair(config);
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
 
         peer.send(
+            &mut handler,
             &Message::Create {
                 client_id: "alice".into(),
                 session_id: "s2".into(),
@@ -1004,22 +1023,17 @@ mod tests {
             b"",
         );
         assert!(peer.reply_err().contains("limit reached"));
+        assert_eq!(registry.len(), 1);
 
-        peer.send(
-            &Message::Destroy {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
+        destroy(&mut handler, &mut peer, "alice", "s1");
     }
 
     #[test]
     fn create_with_missing_cwd_fails_cleanly() {
-        let (mut _handler, mut peer, registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
+        let (mut handler, mut peer, registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
         peer.send(
+            &mut handler,
             &Message::Create {
                 client_id: "alice".into(),
                 session_id: "s1".into(),
@@ -1036,20 +1050,11 @@ mod tests {
 
     #[test]
     fn data_length_mismatch_is_rejected() {
-        let (mut _handler, mut peer, _registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
+        let (mut handler, mut peer, _registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
         peer.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-                cwd: None,
-                cols: 80,
-                rows: 24,
-            },
-            b"",
-        );
-        peer.reply_ok();
-        peer.send(
+            &mut handler,
             &Message::Data {
                 session_id: "s1".into(),
                 seq: 1,
@@ -1058,39 +1063,15 @@ mod tests {
             b"short",
         );
         assert!(peer.reply_err().contains("length mismatch"));
-        peer.send(
-            &Message::Destroy {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
+        destroy(&mut handler, &mut peer, "alice", "s1");
     }
 
     #[test]
     fn shutdown_detaches_subscriptions() {
         let (mut handler, mut peer, registry) = handler_pair(test_config());
-        hello(&mut peer, "alice");
-        peer.send(
-            &Message::Create {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-                cwd: None,
-                cols: 80,
-                rows: 24,
-            },
-            b"",
-        );
-        peer.reply_ok();
-        peer.send(
-            &Message::Attach {
-                client_id: "alice".into(),
-                session_id: "s1".into(),
-            },
-            b"",
-        );
-        peer.reply_ok();
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
+        attach(&mut handler, &mut peer, "alice", "s1");
         let session = registry.get("alice", "s1").unwrap();
         assert_eq!(session.subscriber_count(), 1);
         handler.shutdown();
@@ -1099,16 +1080,32 @@ mod tests {
     }
 
     #[test]
+    fn driven_shell_exit_emits_an_event() {
+        let (mut handler, mut peer, registry) = handler_pair(test_config());
+        bind_hello(&mut handler, &mut peer, "alice");
+        create_session(&mut handler, &mut peer, "alice", "s1");
+        attach(&mut handler, &mut peer, "alice", "s1");
+        input(&mut handler, &mut peer, "s1", b"exit 0\n");
+        peer.read_event("exit");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !registry.is_empty() {
+            registry.prune();
+            assert!(Instant::now() < deadline, "exited session was not pruned");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
     fn idle_requires_no_sessions_and_no_clients() {
         let config = ServerConfig {
-            idle_timeout: Duration::from_millis(0),
+            idle_timeout: Duration::from_secs(60),
             ..test_config()
         };
         let context = Context {
             config: Arc::new(config),
             registry: Arc::new(Registry::new(4)),
             connections: AtomicUsize::new(0),
-            last_activity: Mutex::new(Instant::now() - Duration::from_secs(1)),
+            last_activity: Mutex::new(Instant::now() - Duration::from_secs(120)),
         };
         assert!(context.is_idle());
         context.connections.fetch_add(1, Ordering::SeqCst);

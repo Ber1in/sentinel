@@ -44,7 +44,7 @@ pub fn state_dir() -> PathBuf {
 
 /// `$home/.local/share/sentinel` — pure variant used by tests.
 pub fn state_dir_in(home: &Path) -> PathBuf {
-    home.join(".").join("local").join("share").join("sentinel")
+    home.join(".local").join("share").join("sentinel")
 }
 
 /// Default run directory: `~/.local/share/sentinel/run`.
@@ -113,11 +113,11 @@ mod tests {
     #[test]
     fn state_dir_is_under_home() {
         let dir = state_dir_in(Path::new("/home/someone"));
+        assert_eq!(dir, PathBuf::from("/home/someone/.local/share/sentinel"));
         assert_eq!(
-            dir,
-            PathBuf::from("/home/someone/.local/share/sentinel")
+            dir.join("run"),
+            PathBuf::from("/home/someone/.local/share/sentinel/run")
         );
-        assert_eq!(dir.join("run"), PathBuf::from("/home/someone/.local/share/sentinel/run"));
     }
 
     #[test]

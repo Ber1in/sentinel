@@ -65,7 +65,6 @@ fn copy_socket_to_stdout(mut socket: UnixStream) -> io::Result<()> {
                 stdout.flush()?;
             }
             Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-            Err(err) if err.kind() == io::ErrorKind::WouldBlock => continue,
             Err(err) => return Err(err),
         }
     }
@@ -86,7 +85,7 @@ mod tests {
     }
 
     #[test]
-    fn socket_to_stdout_copy_is_byte_transparent() {
+    fn frames_cross_the_proxy_boundary_untouched() {
         // Exercise the copy half directly: a listener sends one frame and closes.
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("helper.sock");

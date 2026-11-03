@@ -85,7 +85,9 @@ pub trait Handle: Send + Sync + 'static {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Thread-safe map of live sessions.
@@ -105,7 +107,10 @@ impl<T: Handle> Registry<T> {
 
     /// Register a session.
     pub fn insert(&self, handle: Arc<T>) -> Result<(), RegistryError> {
-        let key = SessionKey::new(handle.client_id().to_string(), handle.session_id().to_string());
+        let key = SessionKey::new(
+            handle.client_id().to_string(),
+            handle.session_id().to_string(),
+        );
         let mut sessions = lock(&self.sessions);
         if sessions.contains_key(&key) {
             return Err(RegistryError::Exists);
@@ -126,10 +131,7 @@ impl<T: Handle> Registry<T> {
         }
         // Distinguish "unknown" from "belongs to someone else" so the client can
         // log an honest reason; no session data is ever returned.
-        if sessions
-            .keys()
-            .any(|other| other.session_id == session_id)
-        {
+        if sessions.keys().any(|other| other.session_id == session_id) {
             return Err(RegistryError::ForeignNamespace);
         }
         Err(RegistryError::NotFound)
@@ -142,10 +144,7 @@ impl<T: Handle> Registry<T> {
         if let Some(handle) = sessions.remove(&key) {
             return Ok(handle);
         }
-        if sessions
-            .keys()
-            .any(|other| other.session_id == session_id)
-        {
+        if sessions.keys().any(|other| other.session_id == session_id) {
             return Err(RegistryError::ForeignNamespace);
         }
         Err(RegistryError::NotFound)
@@ -254,12 +253,17 @@ mod tests {
 
         let alice = registry.list("alice");
         assert_eq!(
-            alice.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>(),
+            alice
+                .iter()
+                .map(|s| s.session_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["s1", "s2"]
         );
         let bob = registry.list("bob");
         assert_eq!(
-            bob.iter().map(|s| s.session_id.as_str()).collect::<Vec<_>>(),
+            bob.iter()
+                .map(|s| s.session_id.as_str())
+                .collect::<Vec<_>>(),
             vec!["s3"]
         );
         assert!(registry.list("carol").is_empty());
@@ -308,7 +312,9 @@ mod tests {
         let registry = Registry::new(8);
         registry.insert(FakeSession::new("alice", "s1")).unwrap();
         assert_eq!(
-            registry.insert(FakeSession::new("alice", "s1")).unwrap_err(),
+            registry
+                .insert(FakeSession::new("alice", "s1"))
+                .unwrap_err(),
             RegistryError::Exists
         );
     }
@@ -319,7 +325,9 @@ mod tests {
         registry.insert(FakeSession::new("alice", "s1")).unwrap();
         registry.insert(FakeSession::new("bob", "s2")).unwrap();
         assert_eq!(
-            registry.insert(FakeSession::new("carol", "s3")).unwrap_err(),
+            registry
+                .insert(FakeSession::new("carol", "s3"))
+                .unwrap_err(),
             RegistryError::Limit(2)
         );
         assert_eq!(registry.len(), 2);
