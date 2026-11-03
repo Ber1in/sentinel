@@ -3,6 +3,7 @@
 pub mod client_id;
 pub mod config;
 pub mod credentials;
+pub mod deploy;
 pub mod frame_pane;
 pub mod fsm;
 pub mod helper_transport;
