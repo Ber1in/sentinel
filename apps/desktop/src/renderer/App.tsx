@@ -541,7 +541,7 @@ export function App() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-canvas text-ink">
-      <header className="drag-region flex h-10 shrink-0 items-center justify-between border-b border-line pl-3 pr-[148px]">
+      <header className="drag-region flex h-10 shrink-0 items-center justify-between border-b border-line px-3">
         <div className="flex items-center gap-2 text-[13px] font-medium tracking-tight">
           <span className="grid h-5 w-5 place-items-center rounded-md bg-accent text-[11px] font-bold text-canvas">
             S
@@ -550,80 +550,84 @@ export function App() {
           <span className="text-muted">·</span>
           <span className="text-muted">{t('app.tagline')}</span>
         </div>
-          <div className="no-drag relative ml-2 flex items-center gap-1">
-            <MenuButton
-              label={t('menu.session')}
-              open={menu === 'session'}
-              onToggle={() => setMenu(menu === 'session' ? null : 'session')}
-            />
-            <MenuButton
-              label={t('menu.settings')}
-              open={menu === 'settings'}
-              onToggle={() => setMenu(menu === 'settings' ? null : 'settings')}
-            />
-            {menu === 'session' ? (
-              <MenuPanel onClose={() => setMenu(null)}>
-                <MenuItem label={t('action.new')} onClick={() => { setMenu(null); setDialogOpen(true) }} />
-                <MenuItem
-                  label={t('action.splitRight')}
-                  onClick={() => {
-                    setMenu(null)
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void splitTab(tab, 'horizontal')
-                  }}
-                />
-                <MenuItem
-                  label={t('action.splitDown')}
-                  onClick={() => {
-                    setMenu(null)
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void splitTab(tab, 'vertical')
-                  }}
-                />
-                <Divider />
-                <MenuItem
-                  label={t('action.closePane')}
-                  onClick={() => {
-                    setMenu(null)
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void closePane(tab, tab.activePaneId)
-                  }}
-                />
-                <MenuItem
-                  label={t('action.close')}
-                  onClick={() => {
-                    setMenu(null)
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void closeTab(tab)
-                  }}
-                />
-              </MenuPanel>
-            ) : null}
-            {menu === 'settings' ? (
-              <MenuPanel onClose={() => setMenu(null)}>
-                <MenuLabel text={t('settings.language')} />
-                <MenuItem label="English" trailing={language === 'en' ? '✓' : ''} onClick={() => { setLanguage('en'); setMenu(null) }} />
-                <MenuItem label="简体中文" trailing={language === 'zh-CN' ? '✓' : ''} onClick={() => { setLanguage('zh-CN'); setMenu(null) }} />
-                <Divider />
-                <MenuLabel text={t('settings.theme')} />
-                <MenuItem label={t('settings.theme.dark')} trailing={theme === 'dark' ? '✓' : ''} onClick={() => { setTheme('dark'); setMenu(null) }} />
-                <MenuItem label={t('settings.theme.light')} trailing={theme === 'light' ? '✓' : ''} onClick={() => { setTheme('light'); setMenu(null) }} />
-                <MenuItem label={t('settings.theme.system')} trailing={theme === 'system' ? '✓' : ''} onClick={() => { setTheme('system'); setMenu(null) }} />
-                <Divider />
-                <MenuLabel text={t('settings.fontSize')} />
-                {[12, 13, 14, 16].map((size) => (
-                  <MenuItem
-                    key={size}
-                    label={`${size}px`}
-                    trailing={fontSize === size ? '✓' : ''}
-                    onClick={() => { setFontSize(size); setMenu(null) }}
-                  />
-                ))}
-              </MenuPanel>
-            ) : null}
-          </div>
-      </header>
+        </header>
 
+
+      {/* Menu row: kept out of the drag region so the buttons stay clickable. */}
+      <div className="flex h-9 shrink-0 items-center border-b border-line bg-surface px-2">
+        <div className="relative flex items-center gap-1">
+          <MenuButton
+            label={t('menu.session')}
+            open={menu === 'session'}
+            onToggle={() => setMenu(menu === 'session' ? null : 'session')}
+          />
+          <MenuButton
+            label={t('menu.settings')}
+            open={menu === 'settings'}
+            onToggle={() => setMenu(menu === 'settings' ? null : 'settings')}
+          />
+          {menu === 'session' ? (
+            <MenuPanel onClose={() => setMenu(null)}>
+              <MenuItem label={t('action.new')} onClick={() => { setMenu(null); setDialogOpen(true) }} />
+              <MenuItem
+                label={t('action.splitRight')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void splitTab(tab, 'horizontal')
+                }}
+              />
+              <MenuItem
+                label={t('action.splitDown')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void splitTab(tab, 'vertical')
+                }}
+              />
+              <Divider />
+              <MenuItem
+                label={t('action.closePane')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void closePane(tab, tab.activePaneId)
+                }}
+              />
+              <MenuItem
+                label={t('action.close')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void closeTab(tab)
+                }}
+              />
+            </MenuPanel>
+          ) : null}
+          {menu === 'settings' ? (
+            <MenuPanel onClose={() => setMenu(null)}>
+              <MenuLabel text={t('settings.language')} />
+              <MenuItem label="English" trailing={language === 'en' ? '✓' : ''} onClick={() => { setLanguage('en'); setMenu(null) }} />
+              <MenuItem label="简体中文" trailing={language === 'zh-CN' ? '✓' : ''} onClick={() => { setLanguage('zh-CN'); setMenu(null) }} />
+              <Divider />
+              <MenuLabel text={t('settings.theme')} />
+              <MenuItem label={t('settings.theme.dark')} trailing={theme === 'dark' ? '✓' : ''} onClick={() => { setTheme('dark'); setMenu(null) }} />
+              <MenuItem label={t('settings.theme.light')} trailing={theme === 'light' ? '✓' : ''} onClick={() => { setTheme('light'); setMenu(null) }} />
+              <MenuItem label={t('settings.theme.system')} trailing={theme === 'system' ? '✓' : ''} onClick={() => { setTheme('system'); setMenu(null) }} />
+              <Divider />
+              <MenuLabel text={t('settings.fontSize')} />
+              {[12, 13, 14, 16].map((size) => (
+                <MenuItem
+                  key={size}
+                  label={`${size}px`}
+                  trailing={fontSize === size ? '✓' : ''}
+                  onClick={() => { setFontSize(size); setMenu(null) }}
+                />
+              ))}
+            </MenuPanel>
+          ) : null}
+        </div>
+      </div>
       <div className="flex min-h-0 flex-1">
         <aside className="flex w-[268px] shrink-0 flex-col border-r border-line bg-surface">
           <div className="flex items-center justify-between px-3 pb-2 pt-3">
