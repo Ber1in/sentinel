@@ -117,8 +117,49 @@ pub fn install_script(dir: &Path, expected_sha256: &str) -> String {
          fi; \
          chmod 700 \"$d/.staging\"; \
          mv -f \"$d/.staging\" \"$d/sentinel-helper\"; \
-         \"$d/sentinel-helper\" version"
+         \"$d/sentinel-helper\" version; \
+         echo SENTINEL_INSTALL_OK"
     )
+}
+
+/// Upload `binary` to `<dir>/.staging` over the same SSH connection, then install it.
+///
+/// The shipped helper is a Linux ELF bundled with the Windows installer; this is the
+/// only place it crosses the wire.
+pub async fn upload_and_install(
+    connection: &ssh::Connection,
+    dir: &std::path::Path,
+    binary: &[u8],
+    expected_sha256: &str,
+) -> anyhow::Result<String> {
+    let temp = std::env::temp_dir().join(format!(
+        "sentinel-helper-{}-{}.bin",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    std::fs::write(&temp, binary)?;
+
+    let result = async {
+        let target = sftp::RemotePath::parse(format!("{}/.staging", dir.display()))?;
+        let fs = sftp::SftpFs::connect(connection).await?;
+        let mut progress = |_done: u64, _total: u64| {};
+        fs.upload(
+            &temp,
+            &target,
+            "deploy",
+            &sftp::CancelToken::new(),
+            &mut progress,
+        )
+        .await?;
+        install_staged(connection, dir, expected_sha256).await
+    }
+    .await;
+
+    let _ = std::fs::remove_file(&temp);
+    result
 }
 
 /// Start the helper detached and wait briefly for its socket.
@@ -178,10 +219,24 @@ pub async fn install_staged(
     expected_sha256: &str,
 ) -> anyhow::Result<String> {
     let (code, stdout, stderr) = execute(connection, &install_script(dir, expected_sha256)).await?;
-    if code != 0 {
-        anyhow::bail!("install failed (exit {code}): {}", stderr.trim());
+    // Some servers close the channel without an exit status, so a success marker is
+    // more reliable than the exit code alone.
+    if code != 0 || !stdout.contains("SENTINEL_INSTALL_OK") {
+        anyhow::bail!(
+            "install failed (exit {code}): {}",
+            if stderr.trim().is_empty() {
+                stdout.trim()
+            } else {
+                stderr.trim()
+            }
+        );
     }
-    Ok(stdout.trim().to_string())
+    Ok(stdout
+        .lines()
+        .find(|line| !line.contains("SENTINEL_INSTALL_OK"))
+        .unwrap_or("")
+        .trim()
+        .to_string())
 }
 
 /// Start the helper detached and wait until its socket exists.
@@ -245,6 +300,63 @@ mod tests {
         let check = script.find("checksum mismatch").unwrap();
         let swap = script.find("mv -f").unwrap();
         assert!(check < swap);
+    }
+
+    #[tokio::test]
+    async fn uploads_installs_and_reports_the_helper_version() {
+        let Ok(host) = std::env::var("SSHTERM_TEST_HOST") else {
+            return eprintln!("skipped: no test sshd");
+        };
+        let binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/debug/sentinel-helper");
+        if !binary_path.exists() {
+            return eprintln!("skipped: build `cargo build -p helper` first");
+        }
+        let binary = std::fs::read(&binary_path).unwrap();
+        let sha = String::from_utf8(
+            std::process::Command::new("sha256sum")
+                .arg(&binary_path)
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+        let port: u16 = std::env::var("SSHTERM_TEST_PORT").unwrap().parse().unwrap();
+        let user = std::env::var("SSHTERM_TEST_USER").unwrap();
+        let password = std::env::var("SSHTERM_TEST_PASSWORD").unwrap();
+
+        let connection = ssh::Connection::connect(&ssh::ConnectOptions {
+            host,
+            port,
+            user: user.clone(),
+            credentials: ssh::Credentials::Password(password),
+            host_key_policy: ssh::HostKeyPolicy::AcceptAny,
+            keepalive: ssh::Keepalive::default(),
+            timeout: std::time::Duration::from_secs(10),
+        })
+        .await
+        .expect("connect");
+
+        let probe = probe(&connection).await.expect("probe");
+        let dir = probe.install_dir();
+        let version = upload_and_install(&connection, &dir, &binary, &sha)
+            .await
+            .expect("install");
+        assert!(version.starts_with(char::is_numeric) || !version.is_empty());
+
+        // A second install with a wrong checksum must fail and leave no staging file.
+        let error = upload_and_install(&connection, &dir, &binary, "0000")
+            .await
+            .expect_err("bad checksum must fail");
+        assert!(error.to_string().contains("checksum"), "{error}");
+
+        let _ = execute(&connection, &format!("rm -rf {}", dir.display())).await;
+        connection.disconnect().await.unwrap();
     }
 
     #[tokio::test]

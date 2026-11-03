@@ -39,3 +39,4 @@ ssh = { path = "crates/ssh" }
 persistence = { path = "crates/persistence" }
 terminal = { path = "crates/terminal" }
 store = { path = "crates/store" }
+sftp = { path = "crates/sftp" }

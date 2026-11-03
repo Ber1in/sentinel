@@ -344,6 +344,7 @@ dependencies = [
  "russh",
  "serde",
  "serde_json",
+ "sftp",
  "ssh",
  "store",
  "tempfile",

@@ -11,6 +11,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 ssh.workspace = true
 store.workspace = true
+sftp.workspace = true
 persistence.workspace = true
 helper-proto.workspace = true
 terminal.workspace = true
@@ -33,4 +34,5 @@ winreg = "0.52"
 [dev-dependencies]
 ssh.workspace = true
 store.workspace = true
+sftp.workspace = true
 tempfile = "3"
