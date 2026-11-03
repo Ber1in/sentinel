@@ -45,7 +45,19 @@ interface Tab {
   panes: PaneState[]
 }
 
-const paneOf = (tab: Tab): PaneState => tab.panes[0]
+/** Fallback so a malformed or migrated-layout tab can never crash the UI. */
+const EMPTY_PANE: PaneState = {
+  id: '',
+  ratio: 1,
+  hostId: '',
+  sessionId: '',
+  numeric: 0,
+  title: '',
+  state: 'detached',
+  provider: 'tmux'
+}
+
+const paneOf = (tab: Tab): PaneState => tab.panes[0] ?? EMPTY_PANE
 const paneTitle = (tab: Tab): string => paneOf(tab).title
 const paneState = (tab: Tab): SessionState => paneOf(tab).state
 
@@ -113,19 +125,28 @@ export function App() {
           const rowsForTab = rows.filter((row) => row.tab_id === tab.id)
           const root = rebuild(rowsForTab, tab.id)
           if (!root) continue
-          const panes: PaneState[] = rowsForTab
-            .filter((row) => row.direction === null)
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((row) => ({
-              id: row.id,
-              ratio: 1,
-              hostId: row.host_id ?? '',
-              sessionId: row.session_id ?? '',
-              numeric: 0,
-              title: tab.title,
-              state: 'detached' as SessionState,
-              provider: 'tmux' as ProviderKind
-            }))
+          // Leaves come from the tree, not from `direction === null`: older layouts wrote
+          // a direction on every row, which made that filter drop every pane.
+          const panes: PaneState[] = paneIds(root)
+            .sort((a, b) => {
+              const left = rowsForTab.find((row) => row.id === a)?.sort_order ?? 0
+              const right = rowsForTab.find((row) => row.id === b)?.sort_order ?? 0
+              return left - right
+            })
+            .map((paneId) => {
+              const row = rowsForTab.find((item) => item.id === paneId)
+              return {
+                id: paneId,
+                ratio: 1,
+                hostId: row?.host_id ?? '',
+                sessionId: row?.session_id ?? '',
+                numeric: 0,
+                title: tab.title,
+                state: 'detached' as SessionState,
+                provider: 'tmux' as ProviderKind
+              }
+            })
+          if (panes.length === 0) continue
           built.push({
             id: tab.id,
             root,
