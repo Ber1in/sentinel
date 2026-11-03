@@ -136,6 +136,63 @@ pub fn start_script(dir: &Path) -> String {
     )
 }
 
+/// Run one command over an existing SSH connection and collect its output.
+pub async fn execute(
+    connection: &ssh::Connection,
+    command: &str,
+) -> anyhow::Result<(i32, String, String)> {
+    let mut channel = connection.exec(command).await?;
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut code = 0;
+    while let Some(message) = channel.wait().await {
+        match message {
+            russh::ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+            russh::ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
+            russh::ChannelMsg::ExitStatus { exit_status } => code = exit_status as i32,
+            russh::ChannelMsg::Eof | russh::ChannelMsg::Close => break,
+            _ => {}
+        }
+    }
+    Ok((
+        code,
+        String::from_utf8_lossy(&stdout).into_owned(),
+        String::from_utf8_lossy(&stderr).into_owned(),
+    ))
+}
+
+/// Probe the remote host. A non-zero exit from the probe command is reported as an
+/// error because it means we could not determine the host's capabilities.
+pub async fn probe(connection: &ssh::Connection) -> anyhow::Result<Probe> {
+    let (code, stdout, stderr) = execute(connection, probe_command()).await?;
+    if code != 0 {
+        anyhow::bail!("probe failed (exit {code}): {}", stderr.trim());
+    }
+    Ok(parse_probe(&stdout))
+}
+
+/// Install a binary that is already present at `<dir>/.staging`.
+pub async fn install_staged(
+    connection: &ssh::Connection,
+    dir: &std::path::Path,
+    expected_sha256: &str,
+) -> anyhow::Result<String> {
+    let (code, stdout, stderr) = execute(connection, &install_script(dir, expected_sha256)).await?;
+    if code != 0 {
+        anyhow::bail!("install failed (exit {code}): {}", stderr.trim());
+    }
+    Ok(stdout.trim().to_string())
+}
+
+/// Start the helper detached and wait until its socket exists.
+pub async fn start(connection: &ssh::Connection, dir: &std::path::Path) -> anyhow::Result<()> {
+    let (code, _stdout, stderr) = execute(connection, &start_script(dir)).await?;
+    if code != 0 {
+        anyhow::bail!("helper did not start (exit {code}): {}", stderr.trim());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +245,38 @@ mod tests {
         let check = script.find("checksum mismatch").unwrap();
         let swap = script.find("mv -f").unwrap();
         assert!(check < swap);
+    }
+
+    #[tokio::test]
+    async fn probes_a_real_host_over_ssh() {
+        let Ok(host) = std::env::var("SSHTERM_TEST_HOST") else {
+            return eprintln!("skipped: no test sshd");
+        };
+        let port: u16 = std::env::var("SSHTERM_TEST_PORT").unwrap().parse().unwrap();
+        let user = std::env::var("SSHTERM_TEST_USER").unwrap();
+        let password = std::env::var("SSHTERM_TEST_PASSWORD").unwrap();
+
+        let connection = ssh::Connection::connect(&ssh::ConnectOptions {
+            host,
+            port,
+            user: user.clone(),
+            credentials: ssh::Credentials::Password(password),
+            host_key_policy: ssh::HostKeyPolicy::AcceptAny,
+            keepalive: ssh::Keepalive::default(),
+            timeout: std::time::Duration::from_secs(10),
+        })
+        .await
+        .expect("connect");
+
+        let probe = probe(&connection).await.expect("probe");
+        assert!(!probe.arch.is_empty());
+        assert!(probe.home.contains(&user), "home was {}", probe.home);
+        assert!(
+            probe.writable,
+            "test user's home should be writable: {probe:?}"
+        );
+        assert!(probe.target().is_ok());
+        connection.disconnect().await.unwrap();
     }
 
     #[test]
