@@ -12,6 +12,7 @@ tracing-subscriber.workspace = true
 ssh.workspace = true
 store.workspace = true
 persistence.workspace = true
+helper-proto.workspace = true
 terminal.workspace = true
 russh.workspace = true
 async-trait = "0.1"

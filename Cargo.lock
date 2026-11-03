@@ -336,6 +336,7 @@ dependencies = [
  "async-trait",
  "fs2",
  "futures-util",
+ "helper-proto",
  "keyring",
  "persistence",
  "protocol",
