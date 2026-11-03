@@ -1,0 +1,25 @@
+[package]
+name = "sentinel-perf"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Standalone measurement harness for docs/perf.md (not part of the product workspace)"
+
+# Independent workspace on purpose: this harness is not built by `cargo test --workspace`,
+# so CI stays fast, but it still reuses the real crates by path.
+[workspace]
+
+[dependencies]
+terminal = { path = "../../crates/terminal" }
+
+daemon = { path = "../../crates/daemon", optional = true }
+ssh = { path = "../../crates/ssh", optional = true }
+persistence = { path = "../../crates/persistence", optional = true }
+protocol = { path = "../../crates/protocol", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"], optional = true }
+
+[features]
+default = []
+# Live-session measurements need an SSH connection and tmux; they pull in the daemon
+# runtime, which is why they are opt-in (first build takes a few minutes).
+session = ["dep:daemon", "dep:ssh", "dep:persistence", "dep:protocol", "dep:tokio"]

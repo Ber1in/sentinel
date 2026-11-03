@@ -1,0 +1,18 @@
+{
+  "change": "sftp-file-panel",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "task_hash_policy": "task-content-v1",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "d43353698db6a5bca7e20baed3e583dc9d8ddf4c53453e09954f396fc7595e6c",
+  "files": [
+    { "path": "docs/openspec/changes/sftp-file-panel/proposal.md", "sha256": "f7178bb3eb6841f522cb2ee11c68d7ec884ac6c69d96c30d9a75d532f8ae693d" },
+    { "path": "docs/openspec/changes/sftp-file-panel/design.md", "sha256": "030a29d479ca3047b6c1ed7028718532bd3a890d6e2ee6a88fc6feb06000742b" },
+    { "path": "docs/openspec/changes/sftp-file-panel/tasks.md", "sha256": "bfcf7a6319422ad039f1bb264d315058b28fba513bf5ad1384f48360771d5648" },
+    { "path": "docs/openspec/changes/sftp-file-panel/.openspec.yaml", "sha256": "71e91d8f42848565b00ec7bb4da95cf19e2182f4adc440c230b10a0f3345023b" },
+    { "path": "docs/openspec/changes/sftp-file-panel/specs/file-transfer-queue/spec.md", "sha256": "dde4c1572f512533259a85513456fb7c8d9e5f1641503a79bcf2bdd516d6952c" },
+    { "path": "docs/openspec/changes/sftp-file-panel/specs/remote-file-operations/spec.md", "sha256": "0737ca0f4cd687efd8fa60e333f3f71ccbb7b3bc35687e274a492ab9c45ca041" },
+    { "path": "docs/openspec/changes/sftp-file-panel/specs/sftp-file-browser/spec.md", "sha256": "4aa13d9a03630021856918712cabc52727ea508cd9b0ef69f5eeed6a753d9312" }
+  ]
+}

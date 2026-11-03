@@ -97,20 +97,23 @@ pub fn decode(frame: &[u8]) -> Result<(Message, Vec<u8>), FrameError> {
     }
     let payload = &frame[4..4 + total];
 
-    // The header is JSON; the body (if any) follows it. Try progressively shorter
-    // prefixes so a binary body can never be mistaken for JSON.
-    for split in (1..=payload.len()).rev() {
-        if let Ok(message) = serde_json::from_slice::<Message>(&payload[..split]) {
-            return Ok((message, payload[split..].to_vec()));
-        }
-        if payload.len() - split > 8192 {
-            break;
-        }
-    }
-    Err(FrameError::Header("no valid json header".into()))
+    // The header is a single JSON value; the body (if any) follows it. The
+    // stream deserializer reports how many bytes the value consumed, so a
+    // binary body of any size can never be mistaken for part of the header.
+    let mut stream = serde_json::Deserializer::from_slice(payload).into_iter::<Message>();
+    let message = stream
+        .next()
+        .ok_or_else(|| FrameError::Header("empty frame".into()))?
+        .map_err(|err| FrameError::Header(err.to_string()))?;
+    let header_len = stream.byte_offset();
+    Ok((message, payload[header_len..].to_vec()))
 }
 
 /// Total length of a frame starting at `buffer`, or `None` when incomplete.
+///
+/// Kept as part of the wire API: a buffered reader will want it to know how
+/// many bytes to wait for before parsing.
+#[allow(dead_code)]
 pub fn frame_len(buffer: &[u8]) -> Option<usize> {
     if buffer.len() < 4 {
         return None;
@@ -231,5 +234,34 @@ mod tests {
         );
         assert_eq!(frame_len(&frame[..2]), None);
         assert_eq!(frame_len(&frame), Some(frame.len()));
+    }
+
+    #[test]
+    fn large_binary_bodies_are_preserved() {
+        // Terminal bursts easily exceed 8 KiB; the body must survive untouched.
+        let body: Vec<u8> = (0..64 * 1024).map(|i| (i % 251) as u8).collect();
+        let message = Message::Data {
+            session_id: "s".into(),
+            seq: 1,
+            len: body.len() as u32,
+        };
+        let frame = encode(&message, &body);
+        let (decoded, decoded_body) = decode(&frame).unwrap();
+        assert_eq!(decoded, message);
+        assert_eq!(decoded_body, body);
+    }
+
+    #[test]
+    fn json_looking_bodies_do_not_confuse_the_parser() {
+        let body = br#"{"kind":"reply","id":9,"ok":true}"#;
+        let message = Message::Data {
+            session_id: "s".into(),
+            seq: 2,
+            len: body.len() as u32,
+        };
+        let frame = encode(&message, body);
+        let (decoded, decoded_body) = decode(&frame).unwrap();
+        assert_eq!(decoded, message);
+        assert_eq!(decoded_body, body);
     }
 }

@@ -1,3 +1,9 @@
+---
+comet_change: sftp-file-panel
+role: technical-design
+canonical_spec: openspec
+---
+
 # 设计：SFTP 文件面板
 
 ## 背景
