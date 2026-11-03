@@ -266,7 +266,21 @@ pub async fn probe(connection: &ssh::Connection) -> anyhow::Result<Probe> {
     if code != 0 {
         anyhow::bail!("probe failed (exit {code}): {}", stderr.trim());
     }
-    Ok(parse_probe(&stdout))
+    let mut probe = parse_probe(&stdout);
+
+    // Fall back to individual queries when the combined script produced no output: some
+    // restricted shells choke on the nesting.
+    if probe.arch.is_empty() {
+        if let Ok((0, out, _)) = execute(connection, "uname -m").await {
+            probe.arch = out.trim().to_string();
+        }
+    }
+    if probe.home.is_empty() {
+        if let Ok((0, out, _)) = execute(connection, "printf %s \"$HOME\"; echo").await {
+            probe.home = out.trim().to_string();
+        }
+    }
+    Ok(probe)
 }
 
 /// Install a binary that is already present at `<dir>/.staging`.

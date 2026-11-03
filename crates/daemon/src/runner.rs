@@ -289,8 +289,15 @@ async fn run_once(
             // reuse it. The binaries ship next to the daemon in the installer.
             let helper_dir = crate::deploy::helper_dir();
             if let Err(error) = crate::deploy::ensure(&connection, &helper_dir).await {
-                tracing::warn!(session = %spec.session_id, %error, "helper deployment failed");
-                return RunOutcome::Retry(error.to_string());
+                tracing::warn!(
+                    session = %spec.session_id,
+                    dir = %helper_dir.display(),
+                    %error,
+                    "helper deployment failed"
+                );
+                // Retrying a missing bundle forever would leave the tab stuck on
+                // "connecting"; report the reason instead.
+                return RunOutcome::Fatal(format!("helper deployment failed: {error}"));
             }
 
             match crate::frame_pane::FramePane::open(
