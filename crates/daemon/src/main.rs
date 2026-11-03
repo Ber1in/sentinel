@@ -17,6 +17,8 @@ fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse()?))
         .with_writer(std::io::stderr)
+        // The GUI redirects stderr to daemon.log; escape sequences there are noise.
+        .with_ansi(false)
         .init();
 
     if std::env::args().any(|argument| argument == "--supervise") {
