@@ -323,7 +323,7 @@ async fn run_once(
     }
 
     let mut cwd_tracker = terminal::CwdTracker::new();
-    let mut channel = match connection
+    let channel = match connection
         .open_pty_exec(
             &spec
                 .provider
@@ -341,18 +341,20 @@ async fn run_once(
         }
     };
 
+    let mut channel: Box<dyn crate::pane_channel::PaneChannel> =
+        Box::new(crate::pane_channel::ExecPane::new(channel));
     let _ = fsm.apply(Event::Connected);
     let _ = state_tx.send(fsm.state());
 
     // Drain anything typed while disconnected.
     if !queued.is_empty() {
         let pending = queued.take();
-        let _ = channel.data(pending.as_slice()).await;
+        let _ = channel.write(&pending).await;
     }
 
     loop {
         tokio::select! {
-            message = channel.wait() => {
+            message = channel.next() => {
                 match message {
                     Some(ChannelMsg::Data { data }) => {
                         if let Some(cwd) = cwd_tracker.feed(&data) {
@@ -379,13 +381,13 @@ async fn run_once(
             command = commands.recv() => {
                 match command {
                     Some(Command::Input(bytes)) => {
-                        if channel.data(bytes.as_slice()).await.is_err() {
+                        if channel.write(&bytes).await.is_err() {
                             let _ = queued.push(&bytes);
                             return RunOutcome::Retry("write failed".into());
                         }
                     }
                     Some(Command::Resize { cols, rows }) => {
-                        let _ = channel.window_change(cols as u32, rows as u32, 0, 0).await;
+                        let _ = channel.resize(cols, rows).await;
                     }
                     Some(Command::Detach) => {
                         let _ = fsm.apply(Event::Detach);
