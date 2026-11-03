@@ -469,8 +469,6 @@ impl Manager {
             }
         }
 
-        // Opt-in switch until first-connect deployment lands: the default stays tmux so
-        // existing sessions and behaviour are untouched.
         let provider_kind =
             if self.helper_allowed(&host.host_id) && self.helper_info(&host.host_id).available {
                 ProviderKind::Helper
