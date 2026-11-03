@@ -77,6 +77,18 @@ impl FramePane {
         // An existing session is not an error: fall through to attach.
         let _ = created;
 
+        // `create` only allocates the session; `attach` subscribes us to its output and
+        // replays the current screen (frames arrive before the reply).
+        request(
+            &mut channel,
+            &mut pending,
+            Message::Attach {
+                client_id: client_id.to_string(),
+                session_id: session_id.to_string(),
+            },
+        )
+        .await?;
+
         let (tx, rx) = mpsc::channel(256);
         for bytes in pending.drain(..) {
             let _ = tx.send(ChannelMsg::Data { data: bytes.into() }).await;
