@@ -134,6 +134,11 @@ impl SessionRuntime {
         self.scrollback.lock().unwrap().tail_lines(lines)
     }
 
+    /// True once the runtime loop has stopped (detached, failed or shut down).
+    pub fn is_finished(&self) -> bool {
+        self.task.is_finished()
+    }
+
     /// Acknowledge the `recreated` signal once the GUI has shown it.
     pub fn clear_recreated(&self) {
         let _ = self.recreated_tx.send(false);

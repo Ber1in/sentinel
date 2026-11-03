@@ -420,6 +420,22 @@ impl Manager {
     }
 
     pub fn list(&self) -> Vec<SessionSummary> {
+        // Drop sessions whose runtime is gone (closed tab, failed session) so the GUI
+        // does not keep showing phantom "open" sessions.
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            let dead: Vec<String> = sessions
+                .iter()
+                .filter(|(_, managed)| managed.runtime.is_finished())
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in dead {
+                if let Some(managed) = sessions.remove(&id) {
+                    managed.watcher.abort();
+                }
+            }
+        }
+
         self.sessions
             .lock()
             .unwrap()

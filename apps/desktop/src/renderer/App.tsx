@@ -454,11 +454,16 @@ export function App() {
     [pushToast, addTab]
   )
 
-  const closeTab = useCallback(async (tab: Tab) => {
-    await Promise.all(tab.panes.map((pane) => window.desktop.detach(pane.sessionId)))
-    setTabs((current) => current.filter((item) => item.id !== tab.id))
-    setActiveTab((current) => (current === tab.id ? null : current))
-  }, [])
+  const closeTab = useCallback(
+    async (tab: Tab) => {
+      await Promise.all(tab.panes.map((pane) => window.desktop.detach(pane.sessionId)))
+      setTabs((current) => current.filter((item) => item.id !== tab.id))
+      setActiveTab((current) => (current === tab.id ? null : current))
+      // Refresh the daemon's session list so the sidebar does not keep a phantom entry.
+      void refreshHosts()
+    },
+    [refreshHosts]
+  )
 
   /** Close one split pane; closing the last one closes the tab. */
   const closePane = useCallback(
