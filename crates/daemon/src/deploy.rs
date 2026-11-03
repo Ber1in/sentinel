@@ -165,11 +165,7 @@ pub async fn upload_and_install(
 /// Make sure the helper is installed and running, uploading only when needed.
 ///
 /// Idempotent: a remote helper that already answers `version` is left alone.
-pub async fn ensure(
-    connection: &ssh::Connection,
-    binary: &[u8],
-    expected_sha256: &str,
-) -> anyhow::Result<Probe> {
+pub async fn ensure(connection: &ssh::Connection, helper_dir: &Path) -> anyhow::Result<Probe> {
     let probe = probe(connection).await?;
     if !probe.ok() {
         anyhow::bail!(
@@ -178,6 +174,17 @@ pub async fn ensure(
         );
     }
     let dir = probe.install_dir();
+
+    let target = probe.target().map_err(|reason| anyhow::anyhow!(reason))?;
+    let binary_path = helper_dir.join(format!("helper-{target}"));
+    let binary = std::fs::read(&binary_path)
+        .map_err(|error| anyhow::anyhow!("helper binary {}: {error}", binary_path.display()))?;
+    let expected_sha256 = std::fs::read_to_string(binary_path.with_extension("sha256"))
+        .map_err(|error| anyhow::anyhow!("helper checksum: {error}"))?
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string();
 
     let existing = execute(
         connection,
@@ -188,7 +195,7 @@ pub async fn ensure(
         return Ok(probe);
     }
 
-    upload_and_install(connection, &dir, binary, expected_sha256).await?;
+    upload_and_install(connection, &dir, &binary, &expected_sha256).await?;
     start(connection, &dir).await?;
     Ok(probe)
 }
@@ -231,6 +238,25 @@ pub async fn execute(
         String::from_utf8_lossy(&stdout).into_owned(),
         String::from_utf8_lossy(&stderr).into_owned(),
     ))
+}
+
+/// Where the bundled helper binaries live.
+///
+/// Packaged: `<install>/resources/helpers` (next to `daemon.exe`). Development: the
+/// workspace `dist/helpers`. `SENTINEL_HELPER_DIR` overrides both.
+pub fn helper_dir() -> std::path::PathBuf {
+    if let Some(dir) = std::env::var_os("SENTINEL_HELPER_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let packaged = parent.join("helpers");
+            if packaged.exists() {
+                return packaged;
+            }
+        }
+    }
+    std::path::PathBuf::from("dist/helpers")
 }
 
 /// Probe the remote host. A non-zero exit from the probe command is reported as an

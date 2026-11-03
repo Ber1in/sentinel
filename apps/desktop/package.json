@@ -40,7 +40,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
   },
-  "description": "Sentinel — persistent SSH workspaces for Windows",
+  "description": "Sentinel \u2014 persistent SSH workspaces for Windows",
   "author": "Ber1in",
   "build": {
     "appId": "io.github.ber1in.sentinel",
@@ -57,6 +57,10 @@
       {
         "from": "../../target/x86_64-pc-windows-gnu/release/daemon.exe",
         "to": "daemon.exe"
+      },
+      {
+        "from": "../../dist/helpers",
+        "to": "helpers"
       }
     ],
     "win": {
