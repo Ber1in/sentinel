@@ -285,6 +285,25 @@ async fn run_once(
     let mut cwd_tracker = terminal::CwdTracker::new();
     let mut channel: Box<dyn crate::pane_channel::PaneChannel> =
         if spec.provider_kind == protocol::ProviderKind::Helper {
+            // Deploy on demand: the first connection installs the helper, later ones
+            // reuse it. A missing local binary is a configuration error, not a retry.
+            if let (Ok(binary_path), Ok(sha)) = (
+                std::env::var("SENTINEL_HELPER_BINARY"),
+                std::env::var("SENTINEL_HELPER_SHA256"),
+            ) {
+                let binary = match tokio::fs::read(&binary_path).await {
+                    Ok(binary) => binary,
+                    Err(error) => {
+                        tracing::warn!(%error, "cannot read helper binary");
+                        return RunOutcome::Fatal(format!("helper binary: {error}"));
+                    }
+                };
+                if let Err(error) = crate::deploy::ensure(&connection, &binary, &sha).await {
+                    tracing::warn!(session = %spec.session_id, %error, "helper deployment failed");
+                    return RunOutcome::Retry(error.to_string());
+                }
+            }
+
             match crate::frame_pane::FramePane::open(
                 &connection,
                 &spec.client_id,

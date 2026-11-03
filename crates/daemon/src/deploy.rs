@@ -162,6 +162,37 @@ pub async fn upload_and_install(
     result
 }
 
+/// Make sure the helper is installed and running, uploading only when needed.
+///
+/// Idempotent: a remote helper that already answers `version` is left alone.
+pub async fn ensure(
+    connection: &ssh::Connection,
+    binary: &[u8],
+    expected_sha256: &str,
+) -> anyhow::Result<Probe> {
+    let probe = probe(connection).await?;
+    if !probe.ok() {
+        anyhow::bail!(
+            "host cannot run the helper: {}",
+            probe.blockers().join("; ")
+        );
+    }
+    let dir = probe.install_dir();
+
+    let existing = execute(
+        connection,
+        &format!("\"{}/sentinel-helper\" version 2>/dev/null", dir.display()),
+    )
+    .await?;
+    if existing.0 == 0 && !existing.1.trim().is_empty() {
+        return Ok(probe);
+    }
+
+    upload_and_install(connection, &dir, binary, expected_sha256).await?;
+    start(connection, &dir).await?;
+    Ok(probe)
+}
+
 /// Start the helper detached and wait briefly for its socket.
 pub fn start_script(dir: &Path) -> String {
     let dir = dir.display();
@@ -238,6 +269,9 @@ pub async fn install_staged(
         .trim()
         .to_string())
 }
+
+/// Make sure the helper is installed and running, uploading only when needed.
+///
 
 /// Start the helper detached and wait until its socket exists.
 pub async fn start(connection: &ssh::Connection, dir: &std::path::Path) -> anyhow::Result<()> {
