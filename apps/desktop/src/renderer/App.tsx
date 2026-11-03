@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronsRight, Columns2, Command, Eye, EyeOff, Moon, Pencil, Plus, Rows2, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
+import { ChevronsRight, Command, Eye, EyeOff, Moon, Pencil, Plus, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
 import type { HostSummary } from '../shared/HostSummary'
 import type { SessionState } from '../shared/SessionState'
 import type { SessionSummary } from '../shared/SessionSummary'
@@ -702,30 +702,6 @@ export function App() {
                 </button>
               </div>
             ))}
-            {activeTab ? (
-              <>
-                <button
-                  className="grid w-9 place-items-center text-muted transition hover:text-ink"
-                  title={t('action.splitRight')}
-                  onClick={() => {
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void splitTab(tab, 'horizontal')
-                  }}
-                >
-                  <Columns2 size={14} />
-                </button>
-                <button
-                  className="grid w-9 place-items-center text-muted transition hover:text-ink"
-                  title={t('action.splitDown')}
-                  onClick={() => {
-                    const tab = tabs.find((item) => item.id === activeTab)
-                    if (tab) void splitTab(tab, 'vertical')
-                  }}
-                >
-                  <Rows2 size={14} />
-                </button>
-              </>
-            ) : null}
             <button
               className="grid w-9 place-items-center text-muted transition hover:text-ink"
               onClick={() => setDialogOpen(true)}
