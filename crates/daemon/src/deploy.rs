@@ -120,7 +120,8 @@ pub fn install_script(dir: &str, expected_sha256: &str) -> String {
          test -f \"$d/.staging\" || {{ echo 'staging binary missing' >&2; exit 11; }}; \
          actual=$(sha256sum \"$d/.staging\" | cut -d' ' -f1); \
          if [ \"$actual\" != '{expected_sha256}' ]; then \
-           rm -f \"$d/.staging\"; echo \"checksum mismatch: $actual\" >&2; exit 12; \
+           echo \"checksum mismatch: expected {expected_sha256} got $actual size $(stat -c%s \"$d/.staging\") bytes\" >&2; \
+           exit 12; \
          fi; \
          chmod 700 \"$d/.staging\"; \
          mv -f \"$d/.staging\" \"$d/sentinel-helper\"; \
@@ -186,6 +187,11 @@ pub async fn ensure(connection: &ssh::Connection, helper_dir: &Path) -> anyhow::
     let binary_path = helper_dir.join(format!("helper-{target}"));
     let binary = std::fs::read(&binary_path)
         .map_err(|error| anyhow::anyhow!("helper binary {}: {error}", binary_path.display()))?;
+    tracing::info!(
+        path = %binary_path.display(),
+        bytes = binary.len(),
+        "helper bundle loaded"
+    );
     let expected_sha256 = std::fs::read_to_string(binary_path.with_extension("sha256"))
         .map_err(|error| anyhow::anyhow!("helper checksum: {error}"))?
         .split_whitespace()
