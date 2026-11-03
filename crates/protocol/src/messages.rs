@@ -278,6 +278,12 @@ pub enum ErrorCode {
     NotFound,
     InvalidRequest,
     TmuxMissing,
+    /// The remote helper is not installed.
+    HelperMissing,
+    /// The remote helper exists but speaks an incompatible version.
+    HelperIncompatible,
+    /// The uploaded helper failed its checksum.
+    HelperChecksum,
     Internal,
 }
 
@@ -292,6 +298,9 @@ impl std::fmt::Display for ErrorCode {
             ErrorCode::NotFound => "not_found",
             ErrorCode::InvalidRequest => "invalid_request",
             ErrorCode::TmuxMissing => "tmux_missing",
+            ErrorCode::HelperMissing => "helper_missing",
+            ErrorCode::HelperIncompatible => "helper_incompatible",
+            ErrorCode::HelperChecksum => "helper_checksum",
             ErrorCode::Internal => "internal",
         };
         f.write_str(text)

@@ -3,4 +3,4 @@
 /**
  * Error classes the GUI renders differently; never derived from message text.
  */
-export type ErrorCode = "auth_failed" | "host_key_mismatch" | "network" | "timeout" | "protocol_version" | "not_found" | "invalid_request" | "tmux_missing" | "internal";
+export type ErrorCode = "auth_failed" | "host_key_mismatch" | "network" | "timeout" | "protocol_version" | "not_found" | "invalid_request" | "tmux_missing" | "helper_missing" | "helper_incompatible" | "helper_checksum" | "internal";

@@ -3,4 +3,4 @@
 /**
  * Which persistence mechanism owns the remote side of a session.
  */
-export type ProviderKind = "tmux" | "none";
+export type ProviderKind = "helper" | "tmux" | "none";

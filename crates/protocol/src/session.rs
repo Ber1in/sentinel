@@ -33,6 +33,8 @@ impl SessionState {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum ProviderKind {
+    /// Sentinel's own remote helper keeps the process alive.
+    Helper,
     /// Remote tmux session keeps the process alive.
     Tmux,
     /// No persistence: the shell dies with the connection.
