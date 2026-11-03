@@ -89,6 +89,19 @@ impl TmuxPersistence {
         )
     }
 
+    /// Shell expression for the injected config path. `~` must not be single-quoted,
+    /// otherwise the shell creates a literal `~` directory instead of using `$HOME`.
+    fn config_path_expr(&self) -> String {
+        let path = self.options.config_path.as_str();
+        if let Some(rest) = path.strip_prefix("~/") {
+            return format!("\"$HOME/{}\"", rest.replace('"', "\\\""));
+        }
+        if path == "~" {
+            return "\"$HOME\"".to_string();
+        }
+        shell_quote(path)
+    }
+
     fn tmux(&self, args: &str) -> String {
         format!("tmux -L {} {}", shell_quote(&self.options.socket), args)
     }
@@ -108,14 +121,14 @@ impl TmuxPersistence {
     pub fn create_session_command(&self, session: &str, cwd: Option<&str>) -> String {
         let mut command = format!(
             "mkdir -p \"$(dirname {})\" && printf '%s' {} > {}",
-            shell_quote(&self.options.config_path),
+            self.config_path_expr(),
             shell_quote(&self.options.config_contents()),
-            shell_quote(&self.options.config_path)
+            self.config_path_expr()
         );
         command.push_str(" && ");
         command.push_str(&self.tmux(&format!(
             "-f {} new-session -d -s {} {}",
-            shell_quote(&self.options.config_path),
+            self.config_path_expr(),
             shell_quote(session),
             cwd.map(|dir| format!("-c {}", shell_quote(dir))).unwrap_or_default()
         )));
@@ -127,11 +140,11 @@ impl TmuxPersistence {
         // command; the config write keeps new servers consistent with our options.
         let mut inner = format!(
             "mkdir -p \"$(dirname {})\"; printf '%s' {} > {}; exec tmux -u -L {} -f {} new-session -A -s {} {}",
-            shell_quote(&self.options.config_path),
+            self.config_path_expr(),
             shell_quote(&self.options.config_contents()),
-            shell_quote(&self.options.config_path),
+            self.config_path_expr(),
             shell_quote(&self.options.socket),
-            shell_quote(&self.options.config_path),
+            self.config_path_expr(),
             shell_quote(session),
             cwd.map(|dir| format!("-c {}", shell_quote(dir))).unwrap_or_default()
         );
@@ -300,6 +313,24 @@ mod tests {
         assert!(config.contains("destroy-unattached off"));
         assert!(config.contains("PROMPT_COMMAND"));
         assert!(config.contains("]7;file://"));
+    }
+
+    #[test]
+    fn config_path_expands_home_instead_of_creating_a_tilde_directory() {
+        let provider = provider();
+        let command = provider.create_session_command("st_h_p", None);
+        assert!(
+            command.contains("\"$HOME/.cache/sentinel/tmux.conf\""),
+            "expected an expanded $HOME path: {command}"
+        );
+        assert!(
+            !command.contains("'~/"),
+            "a quoted `~` would create a literal directory"
+        );
+        assert!(
+            !command.contains("-f '~"),
+            "tmux -f must not receive a literal `~`"
+        );
     }
 
     #[test]
