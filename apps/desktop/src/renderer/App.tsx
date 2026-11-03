@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ChevronsRight, Command, Eye, EyeOff, Moon, Pencil, Plus, Server, Settings, Sun, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
+import { ChevronsRight, Command, Eye, EyeOff, Pencil, Plus, Server, Terminal as TerminalIcon, Trash2, X } from 'lucide-react'
 import type { HostSummary } from '../shared/HostSummary'
 import type { SessionState } from '../shared/SessionState'
 import type { SessionSummary } from '../shared/SessionSummary'
@@ -23,7 +23,7 @@ import {
 } from './layout'
 import { detectLanguage, translator, type Language } from './i18n'
 
-type Theme = 'dark' | 'light'
+type Theme = 'dark' | 'light' | 'system'
 
 interface PaneState {
   id: string
@@ -73,8 +73,12 @@ type AuthOption = (typeof AUTH_OPTIONS)[number]
 export function App() {
   const [language, setLanguage] = useState<Language>(() => detectLanguage())
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem('sentinel.theme') as Theme | null) ?? 'dark'
+    () => (localStorage.getItem('sentinel.theme') as Theme | null) ?? 'system'
   )
+  const [fontSize, setFontSize] = useState<number>(
+    () => Number(localStorage.getItem('sentinel.fontSize')) || 13
+  )
+  const [menu, setMenu] = useState<'session' | 'settings' | null>(null)
   const [hosts, setHosts] = useState<HostSummary[]>([])
   const [daemonSessions, setDaemonSessions] = useState<SessionSummary[]>([])
   const [tabs, setTabs] = useState<Tab[]>([])
@@ -240,9 +244,30 @@ export function App() {
     setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 6000)
   }, [])
 
+  const resolvedTheme =
+    theme === 'system'
+      ? window.matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark'
+      : theme
+
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    document.documentElement.dataset.theme = resolvedTheme
     localStorage.setItem('sentinel.theme', theme)
+  }, [resolvedTheme, theme])
+
+  useEffect(() => {
+    localStorage.setItem('sentinel.fontSize', String(fontSize))
+  }, [fontSize])
+
+  useEffect(() => {
+    if (theme !== 'system') return
+    const media = window.matchMedia('(prefers-color-scheme: light)')
+    const listener = (): void => {
+      document.documentElement.dataset.theme = media.matches ? 'light' : 'dark'
+    }
+    media.addEventListener('change', listener)
+    return () => media.removeEventListener('change', listener)
   }, [theme])
 
   useEffect(() => {
@@ -346,35 +371,6 @@ export function App() {
     [addTab]
   )
 
-  const reconnectAll = useCallback(() => {
-    for (const tab of tabs) {
-      for (const pane of tab.panes) {
-        if (pane.numeric !== 0 || !pane.hostId) continue
-        const host = hosts.find((item) => item.id === pane.hostId)
-        if (!host) continue
-        void window.desktop
-          .createSession(
-            {
-              host_id: host.id,
-              hostname: host.hostname,
-              port: host.port,
-              username: host.username,
-              auth: host.auth
-            },
-            pane.id,
-            null
-          )
-          .then((reply) =>
-            patchPaneIn(tab.id, pane.id, {
-              sessionId: reply.session_id,
-              numeric: reply.numeric,
-              state: 'connecting'
-            })
-          )
-          .catch(() => undefined)
-      }
-    }
-  }, [hosts, patchPaneIn, tabs])
 
   const register = useCallback((numeric: number, terminal: Terminal | null) => {
     if (terminal) terminals.current.set(numeric, terminal)
@@ -554,13 +550,77 @@ export function App() {
           <span className="text-muted">·</span>
           <span className="text-muted">{t('app.tagline')}</span>
         </div>
-        <div className="no-drag flex items-center gap-1">
-          <IconButton label={t('settings.title')} onClick={() => setSettingsOpen(true)}>
-            <Settings size={15} />
-          </IconButton>
-          <IconButton label={theme === 'dark' ? t('settings.theme.light') : t('settings.theme.dark')} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          </IconButton>
+        <div className="no-drag relative flex items-center gap-1">
+          <MenuButton
+            label={t('menu.session')}
+            open={menu === 'session'}
+            onToggle={() => setMenu(menu === 'session' ? null : 'session')}
+          />
+          <MenuButton
+            label={t('menu.settings')}
+            open={menu === 'settings'}
+            onToggle={() => setMenu(menu === 'settings' ? null : 'settings')}
+          />
+          {menu === 'session' ? (
+            <MenuPanel onClose={() => setMenu(null)}>
+              <MenuItem label={t('action.new')} onClick={() => { setMenu(null); setDialogOpen(true) }} />
+              <MenuItem
+                label={t('action.splitRight')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void splitTab(tab, 'horizontal')
+                }}
+              />
+              <MenuItem
+                label={t('action.splitDown')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void splitTab(tab, 'vertical')
+                }}
+              />
+              <Divider />
+              <MenuItem
+                label={t('action.closePane')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void closePane(tab, tab.activePaneId)
+                }}
+              />
+              <MenuItem
+                label={t('action.close')}
+                onClick={() => {
+                  setMenu(null)
+                  const tab = tabs.find((item) => item.id === activeTab)
+                  if (tab) void closeTab(tab)
+                }}
+              />
+            </MenuPanel>
+          ) : null}
+          {menu === 'settings' ? (
+            <MenuPanel onClose={() => setMenu(null)}>
+              <MenuLabel text={t('settings.language')} />
+              <MenuItem label="English" trailing={language === 'en' ? '✓' : ''} onClick={() => { setLanguage('en'); setMenu(null) }} />
+              <MenuItem label="简体中文" trailing={language === 'zh-CN' ? '✓' : ''} onClick={() => { setLanguage('zh-CN'); setMenu(null) }} />
+              <Divider />
+              <MenuLabel text={t('settings.theme')} />
+              <MenuItem label={t('settings.theme.dark')} trailing={theme === 'dark' ? '✓' : ''} onClick={() => { setTheme('dark'); setMenu(null) }} />
+              <MenuItem label={t('settings.theme.light')} trailing={theme === 'light' ? '✓' : ''} onClick={() => { setTheme('light'); setMenu(null) }} />
+              <MenuItem label={t('settings.theme.system')} trailing={theme === 'system' ? '✓' : ''} onClick={() => { setTheme('system'); setMenu(null) }} />
+              <Divider />
+              <MenuLabel text={t('settings.fontSize')} />
+              {[12, 13, 14, 16].map((size) => (
+                <MenuItem
+                  key={size}
+                  label={`${size}px`}
+                  trailing={fontSize === size ? '✓' : ''}
+                  onClick={() => { setFontSize(size); setMenu(null) }}
+                />
+              ))}
+            </MenuPanel>
+          ) : null}
         </div>
       </header>
 
@@ -617,12 +677,7 @@ export function App() {
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
                   {t('sessions.title')}
                 </span>
-                <button
-                  className="rounded px-1.5 py-0.5 text-[10px] text-accent transition hover:bg-elevated"
-                  onClick={reconnectAll}
-                >
-                  {t('action.reconnectAll')}
-                </button>
+
               </div>
               <div className="max-h-[180px] overflow-y-auto px-2 pb-2">
                 {background.map((session) => (
@@ -759,6 +814,7 @@ export function App() {
                         <TerminalPane
                           sessionId={payload.sessionId}
                           numeric={payload.numeric}
+                          fontSize={fontSize}
                           active={activeTab === tab.id}
                           onRegister={register}
                           onReady={() => void window.desktop.resync(payload.sessionId)}
@@ -844,13 +900,6 @@ export function App() {
         }}
         actions={[
           {
-            label: t('action.reconnectAll'),
-            run: () => {
-              setPaletteOpen(false)
-              reconnectAll()
-            }
-          },
-          {
             label: t('settings.title'),
             run: () => {
               setPaletteOpen(false)
@@ -903,13 +952,46 @@ function hostColor(id: string): string {
   return `hsl(${hash} 65% 58%)`
 }
 
-function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+function MenuButton({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`rounded-md px-2 py-1 text-[12px] transition ${
+        open ? 'bg-elevated text-ink' : 'text-muted hover:bg-elevated hover:text-ink'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function MenuPanel({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-20" onClick={onClose} />
+      <div className="absolute left-0 top-8 z-30 w-[200px] rounded-lg border border-line bg-surface p-1 shadow-2xl">
+        {children}
+      </div>
+    </>
+  )
+}
+
+function MenuLabel({ text }: { text: string }) {
+  return <div className="px-2.5 pb-0.5 pt-1.5 text-[10px] uppercase tracking-wide text-muted">{text}</div>
+}
+
+function Divider() {
+  return <div className="my-1 h-px bg-line" />
+}
+
+function MenuItem({ label, onClick, trailing }: { label: string; onClick: () => void; trailing?: string }) {
   return (
     <button
       onClick={onClick}
-      className="block w-full rounded px-2.5 py-1.5 text-left text-[12px] text-ink transition hover:bg-elevated"
+      className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[12px] text-ink transition hover:bg-elevated"
     >
-      {label}
+      <span>{label}</span>
+      {trailing ? <span className="text-accent">{trailing}</span> : null}
     </button>
   )
 }
@@ -928,17 +1010,6 @@ function stateColor(state: SessionState): string {
   }
 }
 
-function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      title={label}
-      onClick={onClick}
-      className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-elevated hover:text-ink"
-    >
-      {children}
-    </button>
-  )
-}
 
 function EmptyState({ title, body, onCreate }: { title: string; body: string; onCreate: () => void }) {
   return (

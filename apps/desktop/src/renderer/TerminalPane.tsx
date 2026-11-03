@@ -15,6 +15,7 @@ const mounted = new Set<string>()
 interface Props {
   sessionId: string
   numeric: number
+  fontSize: number
   active: boolean
   onRegister: (numeric: number, terminal: Terminal | null) => void
   onReady?: () => void
@@ -24,7 +25,7 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }: Props) {
+export function TerminalPane({ sessionId, numeric, fontSize, active, onRegister, onReady }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const terminal = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
@@ -43,7 +44,7 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
 
     const term = new Terminal({
       fontFamily: 'JetBrains Mono, monospace',
-      fontSize: 13,
+      fontSize,
       lineHeight: 1.35,
       cursorBlink: true,
       allowProposedApi: true,
@@ -139,7 +140,7 @@ export function TerminalPane({ sessionId, numeric, active, onRegister, onReady }
       terminal.current = null
       mounted.delete(sessionId)
     }
-  }, [numeric, sessionId, onRegister])
+  }, [numeric, sessionId, onRegister, fontSize])
 
   useEffect(() => {
     if (active && fit.current) {
