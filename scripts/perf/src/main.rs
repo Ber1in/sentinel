@@ -184,7 +184,9 @@ fn replay() {
     let mut resync = Vec::with_capacity(50);
     for _ in 0..50 {
         let started = Instant::now();
-        let (_, bytes) = scrollback.since(0).expect("nothing evicted at 100k capacity");
+        let (_, bytes) = scrollback
+            .since(0)
+            .expect("nothing evicted at 100k capacity");
         resync.push(started.elapsed().as_nanos());
         debug_assert!(!bytes.is_empty(), "resync must return the whole log");
     }

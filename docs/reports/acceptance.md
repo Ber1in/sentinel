@@ -9,7 +9,7 @@
 
 ## 关于「proposal 中的 6 条验收场景」
 
-`proposal.md` 没有编号的「验收场景」小节；`specs/*/spec.md` 里是 55 条细粒度 Scenario。为了不凭空造需求，下面六条是从 proposal「变更内容」的六项承诺归纳出的**端到端可执行路径**，每条标注它实际覆盖的 spec 场景；完整映射见 [附录 A](#附录-a与-spec-场景的映射)。
+`proposal.md` 没有编号的「验收场景」小节；`specs/*/spec.md` 里是 49 条细粒度 Scenario。为了不凭空造需求，下面六条是从 proposal「变更内容」的六项承诺归纳出的**端到端可执行路径**，每条标注它实际覆盖的 spec 场景；完整映射见 [附录 A](#附录-a与-spec-场景的映射)。
 
 | ID | 场景 | 覆盖的承诺 |
 | --- | --- | --- |
@@ -47,7 +47,7 @@
 
 ### 执行前预检（2026-11-03，代码核对，不是实测结论）
 
-以下四点是在 Linux 侧读代码时发现的**当前实现缺口**。验收时若行为与之一致，请把对应步骤记为 `失败` 并引用本小节，而不是当成偶发：
+以下五点是在 Linux 侧读代码时发现的**当前实现缺口**。验收时若行为与之一致，请把对应步骤记为 `失败` 并引用本小节，而不是当成偶发：
 
 | 缺口 | 现象 | 位置 |
 | --- | --- | --- |
@@ -55,9 +55,13 @@
 | 30 天未访问的清理提示没有实现 | 打开应用不会出现清理提示 | 代码中无 30 天判定（`store` 只存 `last_active_at`） |
 | 后台会话条目只显示标题 + provider | 不显示 spec 要求的主机名、最后活动时间、最后一行摘要 | `App.tsx` 侧边栏「已打开会话」列表 |
 | 渲染层没有「显式结束会话」入口 | 只能关闭标签（detach），无法从界面销毁远端会话 | `preload` 暴露了 `destroy`，`App.tsx` 未调用 |
-| 快速连接 `user@host[:port]` 未实现 | 命令面板只能搜已保存主机 + 新建连接 | 命令面板组件 |
+| 快速连接 `user@host[:port]` 未实现 | 命令面板只能搜已保存主机 + 新建连接 | 命令面板组件（`App.tsx::QuickConnect` 是字段式表单，不解析 `user@host`） |
+| 分屏没有主机选择器 | 「向右/向下分屏」直接复制当前 pane 的主机，不能在新分屏里选另一台主机 | `App.tsx::splitTab` 用 `source.hostId` 调 `createSession` |
+| 跨会话没有连接复用 | 每个 pane 各自 `Connection::connect`，同主机 N 个标签就是 N 条 TCP 连接（spec 要求每主机一条） | `crates/daemon/src/manager.rs::create` → `SessionRuntime::spawn` → `crates/daemon/src/runner.rs:269`；`crates/ssh` 本身支持一条连接开多通道，但 manager 层没用上 |
 
-这五项分别属于任务 8.3 / 8.4，与本任务并行推进；执行验收时以当时的 `tasks.md` 勾选状态为准，若已补上则忽略本表。
+这七项属于任务 3.4（连接复用）、4.2（显式结束）、8.2（跨主机分屏）、8.3（侧边栏/后台会话）、8.4（快速连接）与 8.12（主机管理），与本任务并行推进；执行验收时以当时的 `tasks.md` 勾选状态为准，若已补上则忽略本表。
+
+> 注意：前两项（连接复用、跨主机分屏）是 proposal 的核心卖点，不是边角功能。如果验收当天仍未实现，A1 与 A6 应记为 `失败` 并在结论里点名，而不是降级成"通过"。
 
 ## A1 跨主机标签与分屏（一个窗口同时操作两台机器）
 
@@ -72,15 +76,17 @@
 1. 启动 Sentinel。侧边栏「主机」分组下应出现 `host-A`、`host-B`。
 2. 点击 `host-A`，等待标签状态胶囊变为 **已连接**，执行 `hostname`。
 3. 点标签条右侧的 `+`，连接 `host-B`，执行 `hostname`。此时应有两个标签，主机色标不同。
-4. 在 `host-B` 标签上右键 → **向右分屏** → 在新分屏里连接 `host-A`，执行 `cd /tmp && pwd`。
-5. 在左侧分屏输入 `echo LEFT`，右侧分屏输入 `echo RIGHT`，确认输入不会串到另一个分屏。
-6. 拖动两个分屏之间的分隔条调整比例。
-7. 完全退出 GUI（关闭窗口，不结束守护进程），重新启动 Sentinel。
-8. 检查标签顺序、分屏方向与比例是否与退出前一致；逐一点击标签，确认接回原有会话（`hostname` 与上一步相同，且 `cd /tmp` 的目录还在）。
+4. 在 `host-B` 标签上右键 → **向右分屏**。观察新分屏连到哪台主机：spec 要求分屏可以来自任意主机，当前实现会复制当前 pane 的主机（见预检表）。
+5. 若新分屏能选择主机，选 `host-A`，执行 `cd /tmp && pwd`；若只能复制当前主机，把「跨主机分屏」这一项记为 `失败`，并继续用两个标签完成后面的步骤。
+6. 在左侧分屏输入 `echo LEFT`，右侧分屏输入 `echo RIGHT`，确认输入不会串到另一个分屏。
+7. 拖动两个分屏之间的分隔条调整比例。
+8. 完全退出 GUI（关闭窗口，不结束守护进程），重新启动 Sentinel。
+9. 检查标签顺序、分屏方向与比例是否与退出前一致；逐一点击标签，确认接回原有会话（`hostname` 与上一步相同，`cd /tmp` 的目录还在）。
 
 **预期结果**
 
 - 一个窗口内同时存在两台主机的会话，标签与分屏互不影响；
+- **分屏可来自任意主机**（spec）——当前实现可能只能复制同主机，若如此则第 5 步记 `失败`；
 - 分屏尺寸可拖拽，重启后布局一致；
 - 逐标签惰性恢复：点击才连接，未点击的标签不发起到远端的 SSH 连接（A6 会量化这一点）。
 
@@ -140,9 +146,7 @@
 
 **目标**：验证重连状态机、断线输入队列、回放去重三件事同时成立。
 
-**覆盖**：ssh-connection-management「网络闪断后自动恢复」「断线时输入半行命令」；terminal-emulation「卡顿期间的输出不丢」；terminal-session-persistence「断网时状态变化可
-
-见」；任务 5.1–5.3、8.5。
+**覆盖**：ssh-connection-management「网络闪断后自动恢复」「断线时输入半行命令」；terminal-emulation「卡顿期间的输出不丢」；terminal-session-persistence「断网时状态变化可见」；任务 5.1–5.3、8.5。
 
 **前置**：`host-A` 已连接；知道 `host-A` 的 IP 用来写防火墙规则。
 
@@ -231,12 +235,12 @@ daemon.exe 实例数：____（应为 1）
 
 **覆盖**：terminal-session-persistence「关闭标签后从后台列表接回」「后台会话列表内容正确」「提示清理但不自动删除」；任务 4.2、8.3。
 
-**前置**：`host-A`、`host-B` 各有一个会话；知道如何修改本机时钟（**仅测试机**，见步骤 6 的风险提示）。
+**前置**：`host-A`、`host-B` 各有一个会话；会用 sqlite3（或 DB 工具）备份并修改 `state.sqlite3`（见步骤 6 的风险提示）。
 
 **步骤**
 
 1. 在 `host-A` 标签里运行 `top`，在 `host-B` 标签里运行 `sleep 900`。
-2. 关闭这两个标签（点标签上的 ×，或右键 → 关闭）。**不要**点「结束会话」。
+2. 关闭这两个标签（点标签上的 ×，或右键 → 关闭）。界面目前没有「结束会话」入口（见预检表），所以只要不用 `tmux kill-session` 手工销毁，就满足「只脱离」的前提。
 3. 远端执行 `tmux -L sentinel ls`：两个会话都应仍在；`top` 进程未被杀（`tmux -L sentinel attach -t <name>` 可验证，验证后 `Ctrl-b d` 脱离）。
 4. 看侧边栏「已打开会话」区：应出现两条脱离记录。核对主机名、标签名、最后活动时间、最后一行摘要是否与真实情况一致、排序是否按最后活动时间倒序。
 5. 点击其中一条，确认重新接回：`top` 仍在刷新，且显示离开期间产生的输出。
@@ -275,25 +279,27 @@ daemon.exe 实例数：____（应为 1）
 
 **覆盖**：multi-host-workspace「重启后布局一致」「十个标签不触发十次握手」；terminal-session-persistence「升级后仍能接回旧会话」；ssh-connection-management「同一会话不被重复创建」；任务 3.4、8.6、8.13。
 
-**前置**：`host-A`、`host-B` 可用；能执行 `Get-NetTCPConnection`（PowerShell，无需管理员）与远端 `ss`。
+**前置**：`host-A`、`host-B` 可用；能在远端执行 `ss`；本机有 PowerShell 便于交叉核对。
 
 **步骤**
 
-1. 建立 10 个标签：`host-A` 上 6 个（其中 2 个可以是同主机的分屏），`host-B` 上 4 个。每个标签里 `echo tab-N` 并记住输出。
-2. 在远端统计到该主机的 SSH 连接数：`ss -tn state established '( sport = :22 )' | tail -n +2 | wc -l`（记 `N_before`）。
-3. 在同一台主机上开两个分屏，确认该主机的连接数只 +1：再统计一次（记 `N_split`），`N_split - N_before` 应为 1。
+> 连接数在**远端**统计最可靠：`ss -tn state established '( sport = :22 )' | tail -n +2 | wc -l`（记 `N*`）。测试机是专用的，所以这个数等同于本客户端的连接数；共享机器上请改用 `ss -tnp | grep sshd` 再按用户过滤。
+
+1. 建立 10 个标签：`host-A` 上 6 个（可以是 6 个标签，也可以 5 标签 + 1 分屏），`host-B` 上 4 个。每个标签里 `echo tab-N` 并记住输出。
+2. 统计 `host-A` 上的连接数（记 `N_tabs`）。spec 期望 10 个标签只产生 **每主机 1 条**连接（`host-A` 1 条、`host-B` 1 条）；当前实现每个 pane 各建一条（见预检表），实测很可能是 6 / 4。**如实记录，不要为了让数字好看而改步骤**。
+3. 在 `host-A` 的一个标签里「向右分屏」，再统计一次（记 `N_split`）。spec 期望 `N_split == N_tabs`（复用同一条连接），当前实现预期 `+1`。
 4. 完全退出 Sentinel（GUI 与 daemon 都退出：先用任务管理器结束 `daemon.exe`，再关 GUI，避免 supervisor 立即拉起）。
 5. 重新启动 Sentinel。**在点击任何标签之前**统计两次连接数（间隔 5 秒）：应为 0（惰性恢复）。
-6. 只点击一个标签，再统计：应恰好 +1 条，且不是 10 条。
+6. 只点击一个标签，再统计：应恰好 +1 条（若每 pane 一条连接，这条能通过；关键是第 2、3 步）。
 7. 逐一点击其余标签，确认都能接回、`echo tab-N` 的历史还在；标签顺序与 A1 中的布局一致。
-8. 十会话资源：全部连接后静置 5 分钟，在任务管理器记录 `daemon.exe` + 各 `Sentinel.exe` 进程的 CPU 与内存；同时用 `\\Get-Counter` 或资源监视器记录整机 CPU。
+8. 十会话资源：全部连接后静置 5 分钟，在任务管理器记录 `daemon.exe` + 各 `Sentinel.exe` 进程的 CPU 与内存；同时用资源监视器记录整机 CPU。
    把结果按 `docs/perf.md` 的「待真机」表格格式追加进去（10 个会话 CPU/内存），并注明采样时长与机器配置。
 9. 升级路径：用新版本覆盖安装（保持 `%LOCALAPPDATA%\sentinel` 与 `client.json` 不变），重连同一主机，执行 `tmux -L sentinel ls`：会话名应不变、会话被接回而不是新建。
 
 **预期结果**
 
 - 重启后不点击标签时，到远端的 SSH 连接数为 0；
-- 点击一个标签只建立 1 条连接；同主机多个分屏/标签复用同一条 TCP 连接；
+- 每台主机只保留 1 条 TCP 连接，无论上面有多少标签/分屏（spec「十个标签不触发十次握手」）；当前实现可能不满足，见预检表；
 - 10 个标签全部接回后布局与历史一致；
 - 升级后靠 `client.json` 里的稳定标识接回旧会话，不产生新 `st_*` 名字。
 
@@ -302,7 +308,8 @@ daemon.exe 实例数：____（应为 1）
 ```
 重启后未点击时的连接数：____（应为 0）
 点击 1 个标签后的连接数：____（应为 1）
-同主机两分屏的连接增量：____（应为 1）
+10 标签时 host-A / host-B 连接数：____ / ____（spec 应为 1 / 1）
+同主机再加一个分屏后的连接数：____（spec：不变）
 10 会话 daemon CPU：____%；内存：____ MiB；Sentinel 进程总数：____
 升级后远端会话名是否变化：否 / 是
 结论：
@@ -311,8 +318,8 @@ daemon.exe 实例数：____（应为 1）
 **证据**
 
 - [ ] `a6-1-ten-tabs.png`：10 个标签
-- [ ] `a6-2-zero-connections.png`：启动后未点击时 PowerShell 连接数为 0
-- [ ] `a6-3-one-connection.png`：点击一个标签后为 1
+- [ ] `a6-2-zero-connections.png`：启动后未点击时远端 `ss` 连接数为 0（附命令输出）
+- [ ] `a6-3-one-connection.png`：点击一个标签后连接数变化（并记录 10 标签时的每主机连接数）
 - [ ] `a6-4-resource.png`：10 会话静置 5 分钟的任务管理器截图
 - [ ] `a6-5-tmux-after-upgrade.png`：升级前后 `tmux ls` 会话名一致
 
@@ -334,11 +341,12 @@ daemon.exe 实例数：____（应为 1）
 
 | 命令 | 结果 | 说明 |
 | --- | --- | --- |
-| `eval "$(./scripts/test-sshd.sh start)" && cargo test --workspace --release` | **失败（阻塞）** | `crates/helper` 的测试目标编译失败：`crates/helper/src/frame.rs:106` 调用 `serde_json::Deserializer::byte_offset()`，当前 `serde_json` 版本没有该方法（E0599）。与本变更的验收逻辑无关，但会让「一条命令跑完全部测试」不可用，建议单独修 |
-| `cargo test --workspace --release --exclude helper` | 见下 | 排除 helper 后的全量单测/集成测试 |
-| `cargo test -p ssh --release --test live -- --test-threads=1` | 通过（8 项中的 `throughput` 已单独复跑） | 覆盖四种认证、主机密钥 TOFU、单 TCP 连接复用、keepalive |
+| `eval "$(./scripts/test-sshd.sh start)" && cargo test --workspace --release` | **失败（阻塞）** | `crates/helper` 的测试目标编译失败：`crates/helper/src/frame.rs:106` 调用 `serde_json::Deserializer::byte_offset()`，当前 `serde_json` 版本没有该方法（E0599）。与本变更的验收逻辑无关，但会让「一条命令跑完全部测试」不可用，需要单独修 |
+| `cargo test --workspace --release --exclude helper`（默认并行） | **失败 1 项** | 仅 `crates/persistence/tests/tmux_live.rs::ensure_attaches_then_recreates_and_destroys` 失败：同进程内的多个测试共用 `sshtermtest-<pid>` 这个 tmux socket，互相把对方的 server 杀掉（报 `no server running on /tmp/tmux-1001/sshtermtest-<pid>`）。测试隔离问题，不是产品缺陷 |
+| `cargo test --workspace --release --exclude helper -- --test-threads=1` | **通过**：176 项全绿 | 串行后上述干扰消失；含 `ssh` 的 live 集成测试、`daemon` 的重连测试、`persistence` 的 tmux 实测 |
+| `cargo test -p ssh --release --test live -- --test-threads=1` | 通过（9/9） | 四种认证、主机密钥 TOFU、单 TCP 连接复用、keepalive、吞吐 |
 | `cargo test -p daemon --test reconnect_live --release -- --test-threads=1` | 通过（2/2） | `reconnects_after_the_server_drops_and_replays_history`、`a_vanished_remote_session_is_recreated_and_reported` — 对应 A3 的「自动重连 + 回放」与「会话已不存在」分支 |
-| `./scripts/perf.sh` | 通过 | 吞吐 / 回放 / 空闲 CPU 的可复现数据，见 `docs/perf.md` |
+| `./scripts/perf.sh` | 通过 | 吞吐 253.3 MiB/s、attach 回放 0.089 ms、上翻 20k 行 4.28 ms、空闲 CPU 0 tick/30 s，见 `docs/perf.md` |
 
 > 说明：上面这些通过项只证明「守护进程 + SSH + tmux + 缓冲」这条链路在 Linux 上行为正确；A1–A6 里的 GUI 部分必须在 Windows 上重跑，不能用它们替代。
 
@@ -349,7 +357,7 @@ daemon.exe 实例数：____（应为 1）
 | A1 | `multi-host-workspace`：一个窗口内连接两台主机、左右分屏同时操作两台机器、重启后布局一致 |
 | A2 | `terminal-session-persistence`：强制结束 GUI 后会话仍在；`terminal-emulation`：重开 GUI 后仍能向上翻历史 |
 | A3 | `ssh-connection-management`：网络闪断后自动恢复、断线时输入半行命令；`terminal-emulation`：卡顿期间的输出不丢；`terminal-session-persistence`：断网时状态变化可见 |
-| A4 | `terminal-session-persistence`：守护进程被杀后自动恢复、重复启动不产生第二个守护进程；`desktop-interface`/`ssh-connection-management` 无直接对应（自启在任务 9.1） |
+| A4 | `terminal-session-persistence`：守护进程被杀后自动恢复、重复启动不产生第二个守护进程（登录自启本身由任务 9.1 覆盖，spec 里没有对应场景） |
 | A5 | `terminal-session-persistence`：关闭标签后从后台列表接回、后台会话列表内容正确、提示清理但不自动删除 |
 | A6 | `multi-host-workspace`：十个标签不触发十次握手、重启后布局一致；`terminal-session-persistence`：升级后仍能接回旧会话；`ssh-connection-management`：同一会话不被重复创建 |
 

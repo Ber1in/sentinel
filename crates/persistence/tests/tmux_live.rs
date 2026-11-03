@@ -67,8 +67,12 @@ async fn connect() -> Option<(Arc<Connection>, TmuxPersistence, String)> {
     .await
     .expect("connect");
 
+    // Each test gets its own tmux server: a shared socket let parallel tests kill each
+    // other's sessions.
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let slot = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let provider = TmuxPersistence::new(TmuxOptions {
-        socket: format!("sshtermtest-{}", std::process::id()),
+        socket: format!("sshtermtest-{}-{}", std::process::id(), slot),
         ..TmuxOptions::default()
     });
     let session = TmuxPersistence::make_session_name("testclient", "host", "pane");

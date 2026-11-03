@@ -47,28 +47,28 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 脚本行为：
 
-- 自己调用 `./scripts/test-sshd.sh start` 起一次性 sshd（`127.0.0.1:2222`），缺 cargo / awk / tmux / sshd 时**直接报错退出**，不会打印空表格。
+- 自己调用 `./scripts/test-sshd.sh start` 起一次性 sshd（`127.0.0.1:2222`）；只测回放（`--only replay`）时跳过这一步，因此不需要 root。缺 cargo / awk / tmux、或夹具起不来时**直接报错退出**，不会打印一张只有 `待真机` 的空表。
 - 吞吐直接跑既有集成测试 `crates/ssh/tests/live.rs::throughput_reaches_the_baseline`（10 MiB，`head -c`），断言收满 10485760 字节后才采信数字。
 - 回放与空闲由 `scripts/perf/` 下的独立测量程序 `sentinel-perf` 完成：它按 path 依赖复用真实 crate，但**不属于** Cargo workspace，因此 `cargo test --workspace` 不受影响。首次带 `--features session` 编译约 1–2 分钟。
 - 原始输出落在 `target/perf/*.log`（已被 `.gitignore` 忽略），表格末尾会打印文件名，作为可复核证据。
 
-### 本次实测（2026-11-03）
+### 本次实测（2026-11-03，`20261103T031213Z`）
 
-环境：WSL2 / Linux 6.18.54.1-microsoft-standard-WSL2 / AMD Ryzen 5 3600（12 vCPU）/ 7 GiB RAM / rustc 1.99.1 / tmux 3.2a / release 构建 / 远端为同机回环 sshd。单次运行结果：
+环境：WSL2 / Linux 6.18.54.1-microsoft-standard-WSL2 / AMD Ryzen 5 3600（12 vCPU）/ 7 GiB RAM / rustc 1.99.1 / tmux 3.2a / release 构建 / 远端为同机回环 sshd。单次运行结果（原始日志在 `target/perf/`，同时戳）：
 
 | 指标 | 实测 | 采集方式 |
 | --- | --- | --- |
-| SSH 通道吞吐（10 MiB） | 235.8 MiB/s（42.4 ms） | `cargo test -p ssh --release --test live --exact throughput_reaches_the_baseline` |
-| 滚动缓冲写入（20k 行 / 2.41 MB / 586 个 4 KiB 批次） | 5.7 ms（401 MiB/s） | `sentinel-perf replay` |
-| 回放延迟：attach 回放 2000 行（`tail_lines`） | 中位 0.089 ms，p95 0.108 ms | `sentinel-perf replay`，200 次 |
-| 回放延迟：上翻 20k 行到最早（10 页 × 2000 行，`page_before`） | 中位 4.36 ms，p95 4.78 ms | `sentinel-perf replay`，50 次 |
-| 回放延迟：断帧后 resync 全量 20k 行（`since(0)`） | 中位 0.058 ms，p95 0.116 ms | `sentinel-perf replay`，50 次 |
+| SSH 通道吞吐（10 MiB） | 253.3 MiB/s（39.5 ms） | `cargo test -p ssh --release --test live --exact throughput_reaches_the_baseline` |
+| 滚动缓冲写入（20k 行 / 2.41 MB / 586 个 4 KiB 批次） | 5.6 ms（412 MiB/s） | `sentinel-perf replay` |
+| 回放延迟：attach 回放 2000 行（`tail_lines`） | 中位 0.089 ms，p95 0.107 ms | `sentinel-perf replay`，200 次 |
+| 回放延迟：上翻 20k 行到最早（10 页 × 2000 行，`page_before`） | 中位 4.28 ms，p95 5.49 ms | `sentinel-perf replay`，50 次 |
+| 回放延迟：断帧后 resync 全量 20k 行（`since(0)`） | 中位 0.057 ms，p95 0.099 ms | `sentinel-perf replay`，50 次 |
 | 空闲单会话 CPU（daemon 进程增量） | 0.000%（30 s 内 0 tick；分辨率 0.033%） | `sentinel-perf idle-cpu --seconds 30` |
 | 空闲单会话 RSS（进程整体） | 5.2 MiB | `sentinel-perf idle-cpu` |
 
 读数说明：
 
-- 吞吐在多次运行间有波动，同一台机器上观察到 **236–280 MiB/s**；上表取其中一次，比较不同优化时应连跑 3 次看区间。
+- 吞吐在多次运行间有波动，同一台机器上观察到 **236–280 MiB/s**；上表取 `20261103T031213Z` 那一次，同日复跑 `20261103T031530Z` 得到 272.9 MiB/s、回放各项与上表相差 < 0.1 ms。比较不同优化时应连跑 3 次看区间。
 - 回放延迟是同步调用耗时，不含 xterm.js 渲染与 IPC 传输；2026-11-03 的 GUI 端到端表现需要在真机上另测。
 - 空闲 CPU 为进程级增量（`/proc/self/stat` 的 utime+stime，CLK_TCK=100），因此「0.000%」的含义是「30 s 内不足 1 个 tick」，而不是绝对零。
 - 空闲 RSS 包含测量程序自身与 tokio 运行时，只能当作**同一会话模型下**的相对参考，不能当作产品冷启动内存。
